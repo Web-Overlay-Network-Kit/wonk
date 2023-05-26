@@ -1,0 +1,10 @@
+{
+	"name": "wonk-bitters",
+	"version": "0.1.0",
+	"description": "Helper for building custom APIs using cross-origin iframes.",
+	"main": "dist/index.mjs",
+	"files": [
+		"dist/**/*.mjs"
+	],
+	"license": "MIT-0"
+}

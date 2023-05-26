@@ -1,0 +1,10 @@
+{
+	"name": "wonk-peercon",
+	"version": "0.1.0",
+	"description": "A subclass of RTCPeerConnection that manages signalling / renegotiation and adds support for connecting to revproxy addresses.",
+	"main": "dist/index.mjs",
+	"files": [
+		"dist/**/*.mjs"
+	],
+	"license": "MIT-0"
+}
