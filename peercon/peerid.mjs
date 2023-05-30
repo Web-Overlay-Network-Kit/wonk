@@ -110,7 +110,10 @@ export class OwnPeerId extends PeerId {
 		await done;
 
 		// Pull the raw certificate chain from the RTCDtlsTransport (currently only works in Chrome):
-		const cert_chain = (b?.sctp?.transport?.getRemoteCertificates ?? function(){return false;})();
+		let cert_chain = false;
+		if (typeof b?.sctp?.transport?.getRemoteCertificates == 'function') {
+			cert_chain = b.sctp.transport.getRemoteCertificates();
+		}
 		
 		const fingerprints = Object.create(null);
 
