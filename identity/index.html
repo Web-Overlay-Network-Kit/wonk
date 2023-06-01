@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<script type="importmap">
+	{
+		"imports": {
+			"wonk-peerid": "/peerid/index.mjs",
+			"wonk-identity": "./index.mjs"
+		}
+	}
+</script>
+<script type="module">
+	import {cert, pid} from 'wonk-identity';
+	console.log(cert, pid);
+</script>

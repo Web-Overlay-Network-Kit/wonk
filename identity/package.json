@@ -1,0 +1,13 @@
+{
+	"name": "wonk-identity",
+	"version": "0.1.0",
+	"description": "Store and reuse a single identity in IndexedDB",
+	"main": "index.mjs",
+	"files": [
+		"**/*.mjs"
+	],
+	"license": "MIT-0",
+	"dependencies": {
+		"wonk-peerid": "file:../peerid"
+	}
+}

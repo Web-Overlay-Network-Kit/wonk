@@ -1,6 +1,13 @@
 <!DOCTYPE html>
+<script type="importmap">
+	{
+		"imports": {
+			"wonk-peerid": "./index.mjs"
+		}
+	}
+</script>
 <script type="module">
-	import { OwnPeerId, PeerId, advanced_usage } from './index.mjs';
+	import { OwnPeerId, PeerId, advanced_usage } from 'wonk-peerid';
 
 	// Does this work?
 	advanced_usage.id_fingerprint = 'sha-1';

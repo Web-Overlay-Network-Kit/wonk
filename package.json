@@ -1,6 +1,7 @@
 {
 	"name": "wonk",
 	"workspaces": [
-		"./peerid"
+		"./peerid",
+		"./identity"
 	]
 }
