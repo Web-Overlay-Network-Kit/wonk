@@ -2,7 +2,7 @@
 	"name": "wonk-peerid",
 	"version": "0.1.0",
 	"description": "A class for identifying peers via a fingerprint of their certificate.",
-	"main": "peercon.mjs",
+	"main": "index.mjs",
 	"files": [
 		"**/*.mjs"
 	],

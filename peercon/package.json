@@ -1,0 +1,10 @@
+{
+	"name": "wonk-peercon",
+	"version": "0.1.0",
+	"description": "",
+	"main": "index.mjs",
+	"files": [
+		"**/*.mjs"
+	],
+	"license": "MIT-0"
+}
