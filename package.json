@@ -1,8 +1,4 @@
 {
 	"name": "wonk",
-	"workspaces": [
-		"./peercon",
-		"./revproxy",
-		"./bitters"
-	]
+	"workspaces": []
 }
