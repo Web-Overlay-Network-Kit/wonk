@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<script type="module">
+	import { OwnPeerId, PeerId, advanced_usage } from './index.mjs';
+
+	// Does this work?
+	advanced_usage.id_fingerprint = 'sha-1';
+
+	const cert = await RTCPeerConnection.generateCertificate({name: 'ECDSA', namedCurve: 'P-256'});
+	const pid = await OwnPeerId.from_cert(cert);
+	console.log(pid, cert);
+</script>
