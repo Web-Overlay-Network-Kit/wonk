@@ -45,7 +45,7 @@ export class PeerId {
 	}
 	// Return the sdp text for this PeerId:
 	sdp(fingerprints = [advanced_usage.id_fingerprint]) {
-		const ret = '';
+		let ret = '';
 		for (const algorithm of fingerprints) {
 			ret += `a=fingerprint:${algorithm} ${
 				this.fingerprints[algorithm]
@@ -90,7 +90,7 @@ export class OwnPeerId extends PeerId {
 
 	// Are we the polite peer?
 	polite(other_peerid) {
-		this < other_peerid; // Compare both PeerIds as numbers (BigInts)
+		return this < other_peerid; // Compare both PeerIds as numbers (BigInts)
 	}
 
 	static async from_cert(cert) {
