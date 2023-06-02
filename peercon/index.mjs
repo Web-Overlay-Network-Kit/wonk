@@ -14,13 +14,14 @@ export const rtc_config = {
 };
 
 function encode_candidates(candidates) {
+	// TODO: Firefox doesn't have address/port/type on RTCIceCandidate - it only has .candidate which means we have to parse it manually.
 	return candidates.map(c => `${c.type.substr(0, 1)}${c.port.toString(16).padStart(4, '0')}${c.address}`).join(',');
 }
 function decode_candidates(s) {
 	return decodeURIComponent(s).split(',').map((s, i) => {
-		const type = ['host', 'srflx', 'relay'].find(t => t.startsWith(s.substr(0, 1)));
-		const port = parseInt(s.substr(1, 4), 16);
-		const address = s.substr(5);
+		const type = ['host', 'srflx', 'relay'].find(t => t.startsWith(s.substring(0, 1)));
+		const port = parseInt(s.substring(1, 4), 16);
+		const address = s.substring(5);
 		
 		return new RTCIceCandidate({
 			candidate: `candidate:foundation 1 udp ${i + 1} ${address} ${port} typ ${type}`,
@@ -45,7 +46,8 @@ export class SigMsg {
 		return new this({id, ice_ufrag, ice_pwd, ice_candidates});
 	}
 	[Symbol.toPrimitive](_hint) {
-		const ice_candidates = this.ice_candidates.filter(c => c.protocol == 'udp').sort((a, b) => b.priority - a.priority);
+		console.log(this.ice_candidates);
+		const ice_candidates = this.ice_candidates.filter(c => c.protocol.toLowerCase() == 'udp').sort((a, b) => b.priority - a.priority);
 		const candidates = encode_candidates(ice_candidates);
 
 		return `${String(this.id)}.${

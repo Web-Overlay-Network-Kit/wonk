@@ -13,7 +13,8 @@
 	import { pid } from 'wonk-identity';
 	import { PeerCon, rtc_config, SigMsg } from 'wonk-peercon';
 
-	advanced_usage.id_fingerprint = 'sha-1';
+	// sha-256 is the only supported fingerprint on Firefox
+	// advanced_usage.id_fingerprint = 'sha-1';
 
 	const peer_cert = await RTCPeerConnection.generateCertificate({name: 'ECDSA', namedCurve: 'P-256'});
 	const peer_pid = await OwnPeerId.from_cert(peer_cert);
