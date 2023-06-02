@@ -6,5 +6,8 @@
 	"files": [
 		"**/*.mjs"
 	],
-	"license": "MIT-0"
+	"license": "MIT-0",
+	"dependencies": {
+		"wonk-identity": "file:../identity"
+	}
 }

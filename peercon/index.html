@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<script type="importmap">
+	{
+		"imports": {
+			"wonk-peerid": "../peerid/index.mjs",
+			"wonk-identity": "../identity/index.mjs",
+			"wonk-peercon": "./index.mjs"
+		}
+	}
+</script>
+<script type="module">
+	import { OwnPeerId, PeerId, advanced_usage } from 'wonk-peerid';
+	import { pid } from 'wonk-identity';
+	import { PeerCon, rtc_config, SigMsg } from 'wonk-peercon';
+
+	advanced_usage.id_fingerprint = 'sha-1';
+
+	const peer_cert = await RTCPeerConnection.generateCertificate({name: 'ECDSA', namedCurve: 'P-256'});
+	const peer_pid = await OwnPeerId.from_cert(peer_cert);
+
+	console.log('politeness:', peer_pid.polite(pid), pid.polite(peer_pid));
+	console.log('pids:', String(peer_pid), String(pid));
+
+	// Connect between the default identity and peer:
+	const l = new PeerCon();
+	console.log('local', l);
+
+	const peer_conf = Object.create(rtc_config);
+	peer_conf.certificates = [peer_cert];
+	const r = new PeerCon({config: peer_conf, local_id: peer_pid});
+	console.log('remote', r);
+
+	l.addEventListener('signaling', ({ msg }) => {
+		const enc = String(msg);
+		console.log(enc);
+		r.signal_msg = SigMsg.from_string(enc);
+	});
+	r.addEventListener('signaling', ({ msg }) => {
+		const enc = String(msg);
+		console.log(enc);
+		l.signal_msg = SigMsg.from_string(enc);
+	});
+
+	// TODO: Pass the signalling message between the peers
+</script>
