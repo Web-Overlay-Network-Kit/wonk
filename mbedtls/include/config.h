@@ -1,15 +1,19 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
 #include <unistd.h>
+#include <time.h>
 
 /* Uncertain: I don't know what the correct setting is here: */
 //#define MBEDTLS_NO_64BIT_MULTIPLICATION
-// #define MBEDTLS_PLATFORM_NO_STD_FUNCTIONS
-// #define MBEDTLS_PLATFORM_SETBUF_ALT
+#define MBEDTLS_PLATFORM_NO_STD_FUNCTIONS
+#define MBEDTLS_PLATFORM_SETBUF_ALT
 #define MBEDTLS_PLATFORM_EXIT_ALT
 #define MBEDTLS_PLATFORM_TIME_ALT
-// #define MBEDTLS_PLATFORM_FPRINTF_ALT
+#define MBEDTLS_PLATFORM_FPRINTF_ALT
 #define MBEDTLS_PLATFORM_PRINTF_ALT
-// #define MBEDTLS_PLATFORM_SNPRINTF_ALT
-// #define MBEDTLS_PLATFORM_VSNPRINTF_ALT
+#define MBEDTLS_PLATFORM_SNPRINTF_ALT
+#define MBEDTLS_PLATFORM_VSNPRINTF_ALT
 // #define MBEDTLS_PLATFORM_NV_SEED_ALT
 #define MBEDTLS_PLATFORM_SETUP_TEARDOWN_ALT
 #define MBEDTLS_PLATFORM_MS_TIME_ALT
@@ -172,7 +176,7 @@
 #define MBEDTLS_X509_CRT_WRITE_C
 #define MBEDTLS_X509_CSR_WRITE_C
 
-#define MBEDTLS_API __attribute__((visibility("default")))
+__attribute__((import_module("mbedtls"), import_name("random"))) void get_random(unsigned char *output, size_t len);
+__attribute__((import_module("mbedtls"), import_name("time"))) time_t get_time(time_t *);
 
-__attribute__((import_module("mbedtls"), import_name("hardware_poll"))) int mbedtls_hardware_poll(void *data,
-                          unsigned char *output, size_t len, size_t *olen);
+#endif /* CONFIG_H */
