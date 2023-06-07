@@ -2,6 +2,8 @@
 	"name": "wonk",
 	"workspaces": [
 		"./peerid",
-		"./identity"
+		"./identity",
+		"./peercon",
+		"./mbedtls"
 	]
 }

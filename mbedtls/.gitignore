@@ -1,0 +1,4 @@
+wasi-sdk-*
+*.gzip
+*.wasm
+*.gz
