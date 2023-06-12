@@ -2,3 +2,4 @@ wasi-sdk-*
 *.gzip
 *.wasm
 *.gz
+obj

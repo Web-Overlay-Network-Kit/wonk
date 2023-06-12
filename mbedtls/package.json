@@ -1,13 +1,13 @@
 {
 	"name": "wonk-mbedtls",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "MbedTLS compiled to WebAssembly and then wrapped in JavaScript.",
 	"main": "dist/index.mjs",
 	"files": [
 		"dist/*"
 	],
 	"scripts": {
-		"install": "make RELEASE=1"
+		"install": "make"
 	},
 	"license": "Apache-2.0"
 }

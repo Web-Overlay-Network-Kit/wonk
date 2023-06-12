@@ -6,33 +6,37 @@
 
 /* Uncertain: I don't know what the correct setting is here: */
 //#define MBEDTLS_NO_64BIT_MULTIPLICATION
-#define MBEDTLS_PLATFORM_NO_STD_FUNCTIONS
-#define MBEDTLS_PLATFORM_SETBUF_ALT
-#define MBEDTLS_PLATFORM_EXIT_ALT
-#define MBEDTLS_PLATFORM_TIME_ALT
-#define MBEDTLS_PLATFORM_FPRINTF_ALT
-#define MBEDTLS_PLATFORM_PRINTF_ALT
-#define MBEDTLS_PLATFORM_SNPRINTF_ALT
-#define MBEDTLS_PLATFORM_VSNPRINTF_ALT
+// #define MBEDTLS_PLATFORM_NO_STD_FUNCTIONS
+// #define MBEDTLS_FLATFORM_SNPRINTF_MACRO snprintf
+// #define MBEDTLS_PLATFORM_SETBUF_MACRO setbuf
+// #define MBEDTLS_PLATFORM_SETBUF_ALT
+// #define MBEDTLS_PLATFORM_EXIT_MACRO js_exit
+// #define MBEDTLS_PLATFORM_TIME_MACRO js_time
+// #define MBEDTLS_PLATFORM_FPRINTF_ALT
+// #define MBEDTLS_PLATFORM_PRINTF_ALT
+// #define MBEDTLS_PLATFORM_PRINTF_MACRO js_printf
+// #define MBEDTLS_PLATFORM_FPRINTF_MACRO js_fprintf
+// #define MBEDTLS_PLATFORM_SNPRINTF_MACRO snprintf
+// #define MBEDTLS_PLATFORM_VSNPRINTF_MACRO vsnprintf
 // #define MBEDTLS_PLATFORM_NV_SEED_ALT
-#define MBEDTLS_PLATFORM_SETUP_TEARDOWN_ALT
-#define MBEDTLS_PLATFORM_MS_TIME_ALT
-#define MBEDTLS_ENTROPY_HARDWARE_ALT
+// #define MBEDTLS_PLATFORM_SETUP_TEARDOWN_ALT
+// #define MBEDTLS_PLATFORM_MS_TIME_MACRO js_ms_time
+// #define MBEDTLS_ENTROPY_HARDWARE_ALT
 
 // #define MBEDTLS_NO_DEFAULT_ENTROPY_SOURCES
 
 /* Confident: I'm pretty sure this is the proper setting for this configuration parameter: */
-#define MBEDTLS_HAVE_TIME
-#define MBEDTLS_HAVE_TIME_DATE
+// #define MBEDTLS_HAVE_TIME
+// #define MBEDTLS_HAVE_TIME_DATE
 #define MBEDTLS_DEPRECATED_WARNING
 #define MBEDTLS_DEPRECATED_REMOVED
-#define MBEDTLS_TIMING_ALT
+// #define MBEDTLS_TIMING_ALT
 // #define MBEDTLS_CHECK_RETURN_WARNING
 // #define MBEDTLS_FS_IO
-#define MBEDTLS_NO_PLATFORM_ENTROPY
+// #define MBEDTLS_NO_PLATFORM_ENTROPY
 
 /* Don't matter? */
-#define MBEDTLS_AES_ROM_TABLES
+// #define MBEDTLS_AES_ROM_TABLES
 //#define MBEDTLS_AES_FEWER_TABLES
 //#define MBEDTLS_CAMELLIA_SMALL_MEMORY
 
@@ -112,6 +116,13 @@
 //#define MBEDTLS_X509_REMOVE_INFO
 #define MBEDTLS_X509_RSASSA_PSS_SUPPORT
 
+// #define MBEDTLS_DEBUG_C
+// #define MBEDTLS_ENTROPY_C
+// #define MBEDTLS_ERROR_C
+// #define MBEDTLS_TIMING_C
+// #define MBEDTLS_VERSION_C
+// #define MBEDTLS_PLATFORM_C
+
 #define MBEDTLS_AES_C
 #define MBEDTLS_ASN1_PARSE_C
 #define MBEDTLS_ASN1_WRITE_C
@@ -125,15 +136,12 @@
 #define MBEDTLS_CIPHER_C
 #define MBEDTLS_CMAC_C
 #define MBEDTLS_CTR_DRBG_C
-// #define MBEDTLS_DEBUG_C
 #define MBEDTLS_DES_C
 #define MBEDTLS_DHM_C
 #define MBEDTLS_ECDH_C
 #define MBEDTLS_ECDSA_C
 #define MBEDTLS_ECJPAKE_C
 #define MBEDTLS_ECP_C
-#define MBEDTLS_ENTROPY_C
-#define MBEDTLS_ERROR_C
 #define MBEDTLS_GCM_C
 #define MBEDTLS_HKDF_C
 #define MBEDTLS_HMAC_DRBG_C
@@ -151,7 +159,6 @@
 #define MBEDTLS_PKCS5_C
 #define MBEDTLS_PKCS7_C
 #define MBEDTLS_PKCS12_C
-#define MBEDTLS_PLATFORM_C
 #define MBEDTLS_POLY1305_C
 #define MBEDTLS_RIPEMD160_C
 #define MBEDTLS_RSA_C
@@ -166,8 +173,6 @@
 #define MBEDTLS_SSL_CLI_C
 #define MBEDTLS_SSL_SRV_C
 #define MBEDTLS_SSL_TLS_C
-#define MBEDTLS_TIMING_C
-// #define MBEDTLS_VERSION_C
 #define MBEDTLS_X509_USE_C
 #define MBEDTLS_X509_CRT_PARSE_C
 #define MBEDTLS_X509_CRL_PARSE_C
@@ -176,7 +181,10 @@
 #define MBEDTLS_X509_CRT_WRITE_C
 #define MBEDTLS_X509_CSR_WRITE_C
 
-__attribute__((import_module("mbedtls"), import_name("random"))) void get_random(unsigned char *output, size_t len);
-__attribute__((import_module("mbedtls"), import_name("time"))) time_t get_time(time_t *);
+// __attribute__((import_module("mbedtls"), import_name("random"))) void get_random(unsigned char *output, size_t len);
+// __attribute__((import_module("mbedtls"), import_name("time"))) time_t js_time(time_t *);
+// __attribute__((import_module("mbedtls"), import_name("mstime"))) time_t js_ms_time(time_t *);
+// __attribute__((import_module("mbedtls"), import_name("exit"))) void js_exit(int);
+// __attribute__((import_module("mbedtls"), import_name("printf"))) void js_printf();
 
 #endif /* CONFIG_H */
