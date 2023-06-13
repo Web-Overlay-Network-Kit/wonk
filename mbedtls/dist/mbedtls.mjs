@@ -1,14 +1,44 @@
 export const imports = {
-
+	mbedtls: {
+		random(ptr, len) {
+			crypto.getRandomValues(mem8(ptr, len));
+		}
+	}
 };
 
+export const encoder = new TextEncoder();
+export const decoder = new TextDecoder();
+
 export let mbedtls;
+
+export class OomError extends Error {
+	constructor() {
+		super("The WASM module ran out of memory.");
+	}
+}
 
 export function mem8(offset, length) {
 	return new Uint8Array(mbedtls.memory.buffer, offset, length);
 }
 export function memdv(offset, length) {
 	return new DataView(mbedtls.memory.buffer, offset, length);
+}
+
+export function alloc_str(s) {
+	if (!s.endsWith('\0')) {
+		s += '\0';
+	}
+	const encoded = encoder.encode(s);
+
+	const ptr = mbedtls.malloc(encoded.byteLength);
+	if (!ptr) return;
+
+	mem8(ptr, encoded.byteLength).set(encoded);
+
+	return ptr;
+}
+export function read_str(ptr, len = mbedtls.strlen(ptr)) {
+	return decoder.decode(mem8(ptr, len));
 }
 
 const struct_names = [

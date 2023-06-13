@@ -129,6 +129,16 @@ __attribute__((export_name("sizeof"))) int js_size_of(int index) {
 	return sizes[index];
 }
 
+// Randomization:
+__attribute__((import_module("mbedtls"), import_name("random"))) void js_random(void* buff, size_t len);
+int f_rng(void* _, unsigned char * buff, size_t bufflen) {
+	js_random(buff, bufflen);
+	return bufflen;
+}
+__attribute__((export_name("f_rng"))) int (* f_rng_ptr())(void *, unsigned char *, size_t) {
+	return &f_rng;
+}
+
 int main() {
 	// mbedtls_platform_set_time(get_time);
 	return 0;
