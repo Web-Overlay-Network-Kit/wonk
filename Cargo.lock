@@ -229,7 +229,7 @@ checksum = "b06a4cde4c0f271a446782e3eff8de789548ce57dbc8eca9292c27f4a42004b4"
 [[package]]
 name = "mbedtls"
 version = "0.10.0"
-source = "git+https://github.com/fortanix/rust-mbedtls#c5c69774692469ce839a7ab17fecb2425941d1c0"
+source = "git+https://github.com/evan-brass/rust-mbedtls.git#c25b16b1efcf19ee41120595116ea89889bb8f62"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -246,7 +246,7 @@ dependencies = [
 [[package]]
 name = "mbedtls-platform-support"
 version = "0.1.0"
-source = "git+https://github.com/fortanix/rust-mbedtls#c5c69774692469ce839a7ab17fecb2425941d1c0"
+source = "git+https://github.com/evan-brass/rust-mbedtls.git#c25b16b1efcf19ee41120595116ea89889bb8f62"
 dependencies = [
  "cc",
  "cfg-if",
@@ -257,7 +257,7 @@ dependencies = [
 [[package]]
 name = "mbedtls-sys-auto"
 version = "2.28.3"
-source = "git+https://github.com/fortanix/rust-mbedtls#c5c69774692469ce839a7ab17fecb2425941d1c0"
+source = "git+https://github.com/evan-brass/rust-mbedtls.git#c25b16b1efcf19ee41120595116ea89889bb8f62"
 dependencies = [
  "bindgen",
  "cc",

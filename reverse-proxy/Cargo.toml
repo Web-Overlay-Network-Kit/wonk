@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 eyre = "0.6.8"
-mbedtls = { git = "https://github.com/fortanix/rust-mbedtls" }
+mbedtls = { git = "https://github.com/evan-brass/rust-mbedtls.git" }

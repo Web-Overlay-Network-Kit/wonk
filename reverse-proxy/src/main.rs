@@ -2,7 +2,7 @@ use eyre::Result;
 
 use std::{net::{TcpListener, TcpStream}, sync::Arc};
 
-use mbedtls::{ssl::{Config, config::NullTerminatedStrList, Context}, x509::Certificate, pk::Pk};
+use mbedtls::{ssl::{Config, config::NullTerminatedStrList, Context}, x509::Certificate, pk::Pk, rng::{OsEntropy, CtrDrbg}};
 
 fn handle_stream(config: Arc<Config>, conn: TcpStream) -> Result<()> {
 	let mut ctx = Context::new(config);
@@ -20,6 +20,7 @@ fn main() -> Result<()> {
 	cert_pem.push(0); // mbedtls requires PEM to be null-terminated
 	let mut pk_pem = std::fs::read("./pk.pem")?;
 	pk_pem.push(0);
+
 	let cert = Arc::new(Certificate::from_pem_multiple(&cert_pem)?);
 	let pk = Arc::new(Pk::from_private_key(&pk_pem, None)?);
 
@@ -33,6 +34,10 @@ fn main() -> Result<()> {
 		])?
 	))?;
 
+	let os_rng = Arc::new(OsEntropy::new());
+	let rng = Arc::new(CtrDrbg::new(os_rng, None)?);
+
+	config.set_rng(rng);
 
 	let config = Arc::new(config);
 
