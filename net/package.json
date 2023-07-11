@@ -1,0 +1,11 @@
+{
+	"name": "wonk-net",
+	"version": "0.1.0",
+	"description": "Deno networking things.",
+	"main": "index.mjs",
+	"files": [
+		"**/*.mjs"
+	],
+	"license": "MIT-0",
+	"dependencies": {}
+}

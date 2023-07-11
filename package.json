@@ -4,6 +4,7 @@
 		"./peerid",
 		"./identity",
 		"./peercon",
-		"./mbedtls"
+		"./mbedtls",
+		"./net"
 	]
 }
