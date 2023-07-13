@@ -9,6 +9,11 @@
 	}
 </script>
 <script type="module">
+	import { PeerCon } from 'wonk-peercon';
+
+	const conn = await PeerCon.connect_address()
+</script>
+<script type="module">
 	import { OwnPeerId, PeerId, advanced_usage } from 'wonk-peerid';
 	import { pid } from 'wonk-identity';
 	import { PeerCon, rtc_config, SigMsg } from 'wonk-peercon';

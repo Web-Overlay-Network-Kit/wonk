@@ -1,25 +1,54 @@
-import {alloc_str, mbedtls, OomError, read_str, sizeof} from './mbedtls.mjs';
+import {alloc_str, mbedtls, OomError, read_str, sizeof, imports} from './mbedtls.mjs';
 import {
 	MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_IS_CLIENT,
 	MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_TRANSPORT_DATAGRAM,
 	MBEDTLS_SSL_PRESET_DEFAULT
 } from './mbedtls_def.mjs';
 
-export class TlsProtocol {
-	#sk;
-	#cert;
-	#conf;
-	#ctx;
-	// Try to match the interface for Deno.listenTls:
-	constructor({certChain, privateKey, is_server = true} = {}) {
-		// Should I combine this into a single malloc?
-		this.#ctx = mbedtls.malloc(sizeof('mbedtls_ssl_context'));
-		this.#conf = mbedtls.malloc(sizeof('mbedtls_ssl_config'));
-		this.#cert = mbedtls.malloc(sizeof('mbedtls_x509_crt'));
-		this.#sk = mbedtls.malloc(sizeof('mbedtls_pk_context')); // Secret Key / Private Key
+const ssl_conns = new Map();
+imports.ssl = {
+	ssl_send() {
+
+	},
+	ssl_recv() {
+
+	},
+	ssl_set_timer() {
+
+	},
+	ssl_get_timer() {
+
+	}
+};
+
+export class SslConn {
+	#inner;
+	#reader;
+	#writer;
+	
+	#ssl;
+
+	readable = new ReadableStream(this);
+	writable = new WritableStream(this);
+	get remoteAddr() { return this.#inner.remoteAddr; }
+	get localAddrr() { return this.#inner.localAddrr; }
+
+	constructor(inner, { certChain, privateKey, is_server = true, is_udp = false} = {}) {
+		this.#inner = inner;
+		this.#reader = this.#inner.readable.getReader();
+		this.#writer = this.#inner.writable.getWriter();
+
 		const cert_pem = alloc_str(certChain);
 		const sk_pem = alloc_str(privateKey);
-		
+		const client_id = alloc_str(`${this.#inner.remoteAddr.transport} ${this.#inner.remoteAddr.hostname} ${this.#inner.remoteAddr.port}`);
+
+		if ([cert_pem, sk_pem].some(v => !v)) throw new OomError();
+
+		this.#ssl = mbedtls.ssl_new(cert_pem, sk_pem, is_server, is_udp, client_id);
+		if (!this.#ssl) throw new Error('failed to create Ssl');
+
+		ssl_conns.set(this.#ssl, this);
+
 		try {
 			if ([this.#ctx, this.#conf, this.#cert, this.#sk, cert_pem, sk_pem].indexOf(0) != -1) throw new OomError();
 
@@ -71,5 +100,12 @@ export class TlsProtocol {
 		mbedtls.mbedtls_ssl_config_free(this.#conf);
 		mbedtls.mbedtls_x509_crt_free(this.#cert);
 		mbedtls.mbedtls_pk_context_free(this.#sk);
+	}
+
+	async pull(controller) {
+
+	}
+	async write(chunk) {
+
 	}
 }
