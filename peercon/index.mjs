@@ -20,7 +20,7 @@ function encode_candidates(candidates) {
 function decode_candidates(s) {
 	return decodeURIComponent(s).split(',').map((s, i) => {
 		const type = ['host', 'srflx', 'relay'].find(t => t.startsWith(s.substring(0, 1)));
-		const port = parseInt(s.substring(1, 4), 16);
+		const port = parseInt(s.substring(1, 5), 16);
 		const address = s.substring(5);
 		
 		return new RTCIceCandidate({
@@ -141,7 +141,6 @@ a=setup:${polite ? 'active' : 'passive'}
 a=sctp-port:5000
 `;
 		sdp += this.peer_id.sdp();
-		console.log(sdp);
 		await this.setRemoteDescription({ type: 'answer', sdp });
 		for (const candidate of r_msg.ice_candidates) {
 			this.addIceCandidate(candidate);

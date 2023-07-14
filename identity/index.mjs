@@ -45,5 +45,3 @@ if (existing && existing.cert.expires > (Date.now() + 48 * 60 * 60 * 1000 /* 48h
 	pid = candidate_pid;
 }
 trans.commit();
-
-console.log('wonk-identity', pid, cert);
