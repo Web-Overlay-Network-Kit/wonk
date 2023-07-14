@@ -30,7 +30,6 @@ function decode_candidates(s) {
 	});
 }
 
-// TODO: Rename
 export class SigMsg {
 	id;
 	ice_ufrag;
@@ -57,27 +56,24 @@ export class SigMsg {
 		}.${candidates}`;
 	}
 }
-class SigEvent extends CustomEvent {
-	msg;
-	constructor(msg) {
-		super('signaling');
-		this.msg = msg;
-	}
-}
 
 export class PeerCon extends RTCPeerConnection {
 	// The 0 datachannel is used to determine when the connection has succeeded.  Once openned, it is used to renegotiate the connection.
 	#dc;
 	peer_id;
 	#local_id;
+
 	#remote_msg_res;
 	#remote_msg = new Promise(res => this.#remote_msg_res = res);
-	get signal_msg() {
+	set remote_msg(msg) {
+		this.#remote_msg_res(msg);
+	}
+	get remote_msg() {
 		return this.#remote_msg;
 	}
-	set signal_msg(remote_msg) {
-		this.#remote_msg_res(remote_msg);
-	}
+	#local_msg_res;
+	local_msg = new Promise(res => this.#local_msg_res = res);
+
 	constructor({config = rtc_config, local_id = pid} = {}) {
 		super(config);
 		this.#local_id = local_id;
@@ -103,7 +99,7 @@ export class PeerCon extends RTCPeerConnection {
 			};
 			this.addEventListener('icecandidate', handler);
 		});
-		const connected = new Promise((res, rej) => {
+		this.connected = new Promise((res, rej) => {
 			this.#dc.addEventListener('open', res, {once: true});
 			this.#dc.addEventListener('error', rej, {once: true});
 			this.#dc.addEventListener('closing', rej, {once: true});
@@ -120,10 +116,10 @@ export class PeerCon extends RTCPeerConnection {
 			ice_ufrag,
 			ice_pwd
 		});
-		this.dispatchEvent(new SigEvent(l_msg));
+		this.#local_msg_res(l_msg);
 
 		// Wait for the other peer's signalling message to reach us:
-		const r_msg = await this.signal_msg;
+		const r_msg = await this.remote_msg;
 		this.peer_id = r_msg.id;
 
 		const polite = this.#local_id.polite(this.peer_id);
@@ -146,10 +142,9 @@ a=sctp-port:5000
 			this.addIceCandidate(candidate);
 		}
 
-		await connected;
-		console.log('Connected.');
+		await this.connected;
 
-		// Handle renegotiation using the perfect negotiation pattern:
+		// Switch to using the Perfect negotiation pattern for future renegotiation:
 		// TODO:
 	}
 }

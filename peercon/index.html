@@ -36,16 +36,10 @@
 	const r = new PeerCon({config: peer_conf, local_id: peer_pid});
 	console.log('remote', r);
 
-	l.addEventListener('signaling', ({ msg }) => {
-		const enc = String(msg);
-		console.log(enc);
-		r.signal_msg = SigMsg.from_string(enc);
-	});
-	r.addEventListener('signaling', ({ msg }) => {
-		const enc = String(msg);
-		console.log(enc);
-		l.signal_msg = SigMsg.from_string(enc);
-	});
+	l.local_msg.then(msg => r.remote_msg = msg);
+	r.local_msg.then(msg => l.remote_msg = msg);
+
+	console.log(String(await l.local_msg), String(await r.local_msg));
 
 	// TODO: Pass the signalling message between the peers
 </script>
