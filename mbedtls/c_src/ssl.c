@@ -10,13 +10,17 @@
 #include "mbedtls/x509.h"
 #include "mbedtls/x509_crt.h"
 
-extern int js_rng(void* _, unsigned char * buff, size_t bufflen);
-extern void js_dbg(void *, int, const char *, int, const char *);
+// extern int js_rng(void* _, unsigned char * buff, size_t bufflen);
+// extern void js_dbg(void *, int, const char *, int, const char *);
+
+__attribute__((import_module("mbedtls"), import_name("rng"))) int js_rng(void*, unsigned char*, size_t);
+__attribute__((import_module("mbedtls"), import_name("dbg"))) void js_dbg(void *, int, const char *, int, const char *);
+
 
 __attribute__((import_module("ssl"), import_name("ssl_send"))) int ssl_send(void *, const unsigned char *, size_t);
 __attribute__((import_module("ssl"), import_name("ssl_recv"))) int ssl_recv(void *, unsigned char *, size_t);
-__attribute__((import_module("ssl"), import_name("ssl_timer_set"))) void ssl_timer_set(void *, uint32_t, uint32_t);
-__attribute__((import_module("ssl"), import_name("ssl_timer_get"))) int ssl_timer_get(void *);
+__attribute__((import_module("ssl"), import_name("ssl_set_timer"))) void ssl_set_timer(void *, uint32_t, uint32_t);
+__attribute__((import_module("ssl"), import_name("ssl_get_timer"))) int ssl_get_timer(void *);
 
 typedef struct Ssl {
 	mbedtls_ssl_context ctx;
@@ -25,17 +29,17 @@ typedef struct Ssl {
 	mbedtls_pk_context sk;
 } Ssl;
 
-__attribute__((export_name("ssl_new"))) Ssl* ssl_new(unsigned char* cert_pem, unsigned char* sk_pem, char is_server, char is_udp, const char* client_id) {
+__attribute__((export_name("ssl_new"))) Ssl* ssl_new(unsigned char* cert_pem, unsigned char* sk_pem, char is_server, char is_udp, const unsigned char* client_id) {
 	Ssl* ret = (Ssl*) malloc(sizeof(Ssl));
 	if (ret == NULL) return NULL;
 
 	// Cert
 	mbedtls_x509_crt_init(&ret->crt);
-	if (mbedtls_x509_crt_parse(&ret->crt, cert_pem, strlen(cert_pem) + 1) != 0) goto cleanup;
+	if (mbedtls_x509_crt_parse(&ret->crt, cert_pem, strlen((char *)cert_pem) + 1) != 0) goto cleanup;
 
 	// Secret Key
 	mbedtls_pk_init(&ret->sk);
-	if (mbedtls_pk_parse_key(&ret->sk, sk_pem, strlen(sk_pem) + 1, 0, 0, js_rng, 0) != 0) goto cleanup2;
+	if (mbedtls_pk_parse_key(&ret->sk, sk_pem, strlen((char *)sk_pem) + 1, 0, 0, js_rng, 0) != 0) goto cleanup2;
 
 	// Config
 	mbedtls_ssl_config_init(&ret->conf);
@@ -52,9 +56,9 @@ __attribute__((export_name("ssl_new"))) Ssl* ssl_new(unsigned char* cert_pem, un
 	// Context
 	mbedtls_ssl_init(&ret->ctx);
 	if (mbedtls_ssl_setup(&ret->ctx, &ret->conf) != 0) goto cleanup4;
-	if (mbedtls_ssl_set_client_transport_id(&ret->ctx, client_id, strlen(client_id)) != 0) goto cleanup4;
+	if (mbedtls_ssl_set_client_transport_id(&ret->ctx, client_id, strlen((char *)client_id)) != 0) goto cleanup4;
 	mbedtls_ssl_set_bio(&ret->ctx, ret, ssl_send, ssl_recv, 0);
-	mbedtls_ssl_set_timer_cb(&ret->ctx, ret, ssl_timer_set, ssl_timer_get);
+	mbedtls_ssl_set_timer_cb(&ret->ctx, ret, ssl_set_timer, ssl_get_timer);
 
 	return ret;
 

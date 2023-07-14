@@ -1,24 +1,20 @@
-import {alloc_str, mbedtls, OomError, read_str, sizeof, imports} from './mbedtls.mjs';
-import {
-	MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_IS_CLIENT,
-	MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_TRANSPORT_DATAGRAM,
-	MBEDTLS_SSL_PRESET_DEFAULT
-} from './mbedtls_def.mjs';
+import {alloc_str, mbedtls, OomError, read_str, sizeof, imports, mem8} from './mbedtls.mjs';
+// import {
+// 	MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_IS_CLIENT,
+// 	MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_TRANSPORT_DATAGRAM,
+// 	MBEDTLS_SSL_PRESET_DEFAULT
+// } from './mbedtls_def.mjs';
 
 const ssl_conns = new Map();
 imports.ssl = {
-	ssl_send() {
-
+	ssl_send(ptr, buff_ptr, len) { return ssl_conns.get(ptr).send(mem8(buff_ptr, len)); },
+	ssl_recv(ptr, buff_ptr, len) { return ssl_conns.get(ptr).recv(mem8(buff_ptr, len)); },
+	ssl_set_timer(ptr, a, b) { 
+		const conn = ssl_conns.get(ptr);
+		if (!conn) return; // set_timer_cb calls ssl_set_timer, except we haven't set the ptr into ssl_conns yet... but it's just a reset and we start resetted anyway so just skip it...
+		return conn.set_timer(a, b);
 	},
-	ssl_recv() {
-
-	},
-	ssl_set_timer() {
-
-	},
-	ssl_get_timer() {
-
-	}
+	ssl_get_timer(ptr) { return ssl_conns.get(ptr).get_timer(); }
 };
 
 export class SslConn {
@@ -28,78 +24,67 @@ export class SslConn {
 	
 	#ssl;
 
+	#int = 0;
+	#fin = 0;
+	#timer_handle;
+
 	readable = new ReadableStream(this);
 	writable = new WritableStream(this);
 	get remoteAddr() { return this.#inner.remoteAddr; }
 	get localAddrr() { return this.#inner.localAddrr; }
 
-	constructor(inner, { certChain, privateKey, is_server = true, is_udp = false} = {}) {
+	constructor(inner, { cert_chain, private_key, is_server = true, is_udp = false} = {}) {
 		this.#inner = inner;
 		this.#reader = this.#inner.readable.getReader();
 		this.#writer = this.#inner.writable.getWriter();
 
-		const cert_pem = alloc_str(certChain);
-		const sk_pem = alloc_str(privateKey);
-		const client_id = alloc_str(`${this.#inner.remoteAddr.transport} ${this.#inner.remoteAddr.hostname} ${this.#inner.remoteAddr.port}`);
+		const cert_pem = alloc_str(cert_chain);
+		const sk_pem = alloc_str(private_key);
+		const client_id = alloc_str(Object.values(this.#inner.remoteAddr).join(''));
 
-		if ([cert_pem, sk_pem].some(v => !v)) throw new OomError();
+		if ([cert_pem, sk_pem].some(v => v == 0)) throw new OomError();
 
 		this.#ssl = mbedtls.ssl_new(cert_pem, sk_pem, is_server, is_udp, client_id);
 		if (!this.#ssl) throw new Error('failed to create Ssl');
 
 		ssl_conns.set(this.#ssl, this);
 
-		try {
-			if ([this.#ctx, this.#conf, this.#cert, this.#sk, cert_pem, sk_pem].indexOf(0) != -1) throw new OomError();
-
-			// Initialize the objects:
-			mbedtls.mbedtls_ssl_init(this.#ctx);
-			mbedtls.mbedtls_ssl_config_init(this.#conf);
-			mbedtls.mbedtls_x509_crt_init(this.#cert);
-			mbedtls.mbedtls_pk_init(this.#sk);
-
-			// Parse the certificate chain:
-			let res = mbedtls.mbedtls_x509_crt_parse(this.#cert, cert_pem, mbedtls.strlen(cert_pem) + 1);
-			if (res !== 0) throw new Error("Failed to parse the cert chain.");
-
-			// Parse the secret key:
-			res = mbedtls.mbedtls_pk_parse_key(
-				this.#sk,
-				sk_pem, mbedtls.strlen(sk_pem) + 1,
-				0, 0,
-				mbedtls.f_rng()
-			);
-			if (res != 0) throw new Error("Failed to parse the private key / secret key.");
-
-			// Setup the configuration:
-			res = mbedtls.mbedtls_ssl_config_defaults(this.#conf,
-				is_server ? MBEDTLS_SSL_IS_SERVER : MBEDTLS_SSL_IS_CLIENT,
-				MBEDTLS_SSL_TRANSPORT_STREAM,
-				MBEDTLS_SSL_PRESET_DEFAULT
-			);
-			if (res != 0) throw new Error('Failed to set the defaults on the ssl config.');
-
-			mbedtls.mbedtls_ssl_conf_rng(this.#conf, mbedtls.f_rng(), 0);
-
-			res = mbedtls.mbedtls_ssl_conf_own_cert(this.#conf, this.#cert, this.#sk);
-			if (res != 0) throw new Error('Failed to set the certificate on the ssl config.');
-
-			// Setup the SSL context:
-			res = mbedtls.mbedtls_ssl_setup(this.#ctx, this.#conf);
-			if (res != 0) throw new Error('Failed to set the configuration on the ssl context.');
-		} catch (e) {
-			this.free();
-			throw e;
-		} finally {
-			mbedtls.free(cert_pem);
-			mbedtls.free(sk_pem);
-		}
+		// Start running the handshake:
+		this.#handshake();
 	}
 	free() {
-		mbedtls.mbedtls_ssl_free(this.#ctx);
-		mbedtls.mbedtls_ssl_config_free(this.#conf);
-		mbedtls.mbedtls_x509_crt_free(this.#cert);
-		mbedtls.mbedtls_pk_context_free(this.#sk);
+		mbedtls.ssl_free(this.#ssl);
+	}
+	#handshake() {
+		const ctx = mbedtls.ssl_ctx(this.#ssl);
+		const res = mbedtls.mbedtls_ssl_handshake(ctx);
+		// TODO: add a promise for handshake completion
+		console.log('handshake', res);
+	}
+
+	send(buff) {
+		debugger;
+	}
+	recv(buff) {
+		debugger;
+	}
+	set_timer(int, fin) {
+		if (this.#timer_handle) this.#timer_handle = clearTimeout(this.#timer_handle);
+
+		if (!fin) { this.#fin = false; }
+
+		const now = Date.now();
+		this.#int = now + int;
+		this.#fin = now + fin;
+		this.#timer_handle = setTimeout(this.#handshake.bind(this), fin);
+	}
+	get_timer() {
+		if (!this.#fin) return -1;
+		
+		const now = Date.now();
+		if (now < this.#int) return 0;
+		if (now < this.#fin) return 1;
+		return 2;
 	}
 
 	async pull(controller) {

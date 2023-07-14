@@ -1,7 +1,12 @@
 export const imports = {
 	mbedtls: {
-		random(ptr, len) {
+		rng(_, ptr, len) {
 			crypto.getRandomValues(mem8(ptr, len));
+		},
+		dbg(_, level, file_ptr, line, msg_ptr) {
+			const file = read_str(file_ptr);
+			const message = read_str(msg_ptr);
+			console.log(`MbedTLS error (level ${level}) from ${file}:${line} - ${message}`);
 		}
 	}
 };
