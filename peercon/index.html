@@ -10,10 +10,11 @@
 </script>
 <script type="module">
 	import { PeerCon } from 'wonk-peercon';
+	import { PeerId } from 'wonk-peerid';
 
-	const conn = await PeerCon.connect_address()
+	const conn = await PeerCon.connect_address(PeerId.from_string('OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio'), 'turn:local.evan-brass.net:4666?transport=udp');
 </script>
-<script type="module">
+<script type="_module">
 	import { OwnPeerId, PeerId, advanced_usage } from 'wonk-peerid';
 	import { pid } from 'wonk-identity';
 	import { PeerCon, rtc_config, SigMsg } from 'wonk-peercon';

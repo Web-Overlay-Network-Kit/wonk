@@ -30,6 +30,16 @@ function decode_candidates(s) {
 	});
 }
 
+function gen_token(len = 8) {
+	return btoa(crypto.getRandomValues(new Uint8Array(len)).reduce((a, v) => a + String.fromCharCode(v)))
+		.replaceAll('=', '');
+}
+function gen_candidate() {
+	// Give tasty treats to the US DoD:
+	const rand = crypto.getRandomValues(new Uint8Array(2 + 3));
+	return decode_candidates(`h${rand[0].toString(16)}${rand[1].toString(16)}30.${rand[2]}.${rand[3]}.${rand[4]}`);
+}
+
 export class SigMsg {
 	id;
 	ice_ufrag;
@@ -146,5 +156,36 @@ a=sctp-port:5000
 
 		// Switch to using the Perfect negotiation pattern for future renegotiation:
 		// TODO:
+	}
+	static async connect_address(id, proxy_url, {
+		token = gen_token(),
+		local_id = pid,
+		config = rtc_config,
+		turn_credential = 'random/bullshit/probably/turn',
+		ice_pwd = 'more/bullshit/probably/ice'
+	} = {}) {
+		const temp_config = Object.create(config);
+		temp_config.iceServers = [
+			{ urls: proxy_url, username: `${id}.${local_id}.${token}`, credential: turn_credential }
+		];
+		temp_config.iceTransportPolicy = 'relay';
+
+		const conn = new this({ config: temp_config, local_id });
+		const local_msg = await conn.local_msg;
+
+		conn.remote_msg = new SigMsg({
+			id,
+			ice_ufrag: local_msg.ice_pwd,
+			ice_pwd,
+			ice_candidates: gen_candidate()
+		});
+
+		// Once we're connected, then set the actual configuration and restart ICE:
+		conn.connected.then(() => {
+			conn.setConfiguration(config);
+			conn.restartIce();
+		});
+
+		return conn;
 	}
 }
