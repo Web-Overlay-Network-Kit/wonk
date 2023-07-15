@@ -9,10 +9,15 @@
 	}
 </script>
 <script type="module">
-	import { PeerCon } from 'wonk-peercon';
+	import { PeerCon, Address } from 'wonk-peercon';
 	import { PeerId } from 'wonk-peerid';
 
-	const conn = await PeerCon.connect_address(PeerId.from_string('OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio'), 'turn:local.evan-brass.net:4666?transport=udp');
+	let addr = new Address({ peer_id: PeerId.from_string('OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio'), hostname: '[::]' });
+	console.log(String(addr));
+	addr = Address.from_string('OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio,[::],l01bb');
+	console.log(addr);
+
+	const conn = await PeerCon.connect_address(addr);
 </script>
 <script type="_module">
 	import { OwnPeerId, PeerId, advanced_usage } from 'wonk-peerid';

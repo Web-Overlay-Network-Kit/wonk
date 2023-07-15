@@ -1,5 +1,6 @@
 import { PeerId } from 'wonk-peerid';
 import { cert, pid } from 'wonk-identity';
+export { Address } from './address.mjs';
 
 // RTC configuration that will be used when creating connections:
 export const rtc_config = {
@@ -30,10 +31,6 @@ function decode_candidates(s) {
 	});
 }
 
-function gen_token(len = 8) {
-	return btoa(crypto.getRandomValues(new Uint8Array(len)).reduce((a, v) => a + String.fromCharCode(v)))
-		.replaceAll('=', '');
-}
 function gen_candidate() {
 	// Give tasty treats to the US DoD:
 	const rand = crypto.getRandomValues(new Uint8Array(2 + 3));
@@ -157,16 +154,13 @@ a=sctp-port:5000
 		// Switch to using the Perfect negotiation pattern for future renegotiation:
 		// TODO:
 	}
-	static async connect_address(id, proxy_url, {
-		token = gen_token(),
+	static async connect_address(address, {
 		local_id = pid,
 		config = rtc_config,
-		turn_credential = 'random/bullshit/probably/turn',
-		ice_pwd = 'more/bullshit/probably/ice'
 	} = {}) {
 		const temp_config = Object.create(config);
 		temp_config.iceServers = [
-			{ urls: proxy_url, username: `${id}.${local_id}.${token}`, credential: turn_credential }
+			{ urls: address.urls(), username: address.username(local_id), credential: address.credential() }
 		];
 		temp_config.iceTransportPolicy = 'relay';
 
@@ -174,9 +168,9 @@ a=sctp-port:5000
 		const local_msg = await conn.local_msg;
 
 		conn.remote_msg = new SigMsg({
-			id,
+			id: local_id,
 			ice_ufrag: local_msg.ice_pwd,
-			ice_pwd,
+			ice_pwd: address.ice_pwd(),
 			ice_candidates: gen_candidate()
 		});
 
