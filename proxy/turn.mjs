@@ -163,6 +163,45 @@ export class Stun extends Turn {
 		else if (this.magic != 0x2112A442) throw new Error("Invalid magic value.");
 
 		if (this.length % 4 != 0) throw new Error("STUN not padded.");
+
+		// Check the attributes
+		for (const _ of this.attrs()) {}
+	}
+
+	*attrs() {
+		let i = this.constructor.header_size;
+		while ((i + 4) < (this.constructor.header_size + this.length)) {
+			const type = this.view.getUint16(i);
+			i += 2;
+			const length = this.view.getUint16(i);
+			i += 2;
+			if (i + length > (this.constructor.header_size + this.length)) throw new ParseError("STUN Attribute has a length that exceed's the packet's length.");
+			const value = new DataView(this.view.buffer, this.view.byteOffset + i, length);
+
+			// Re-align
+			i += length;
+			while (i % 4 != 0) i += 1;
+
+			yield { type, length, value };
+		}
+	}
+	get attributes() {
+		const ret = new Map();
+		for (const {type, value} of this.attrs()) {
+			if (!ret.has(type)) ret.set(type, value);
+		}
+		return ret;
+	}
+	add_attribute(type, length) {
+		let i = this.constructor.header_size + this.length;
+		this.length += 4 + length;
+		this.data.setUint16(i, type);
+		this.data.setUint16(i + 2, length);
+		return new DataView(this.view.buffer, this.view.byteOffset + i + 4, length);
+	}
+
+	set_error(code, reason) {
+
 	}
 }
 

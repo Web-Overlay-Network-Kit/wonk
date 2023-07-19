@@ -8,8 +8,8 @@ for await (const conn of listener) {
 	// Spawn a task per connection:
 	(async () => {
 		for await(const packet of Turn.parse_readable(conn.readable)) {
-			debugger;
-			console.log(conn.remoteAddr, packet);
+			
+			console.log(conn.remoteAddr, packet.class, packet.method, packet.attributes);
 		};
 	})();
 }
