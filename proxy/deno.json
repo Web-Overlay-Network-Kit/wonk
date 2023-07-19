@@ -1,7 +1,7 @@
 {
 	"imports": {
 		"wonk-net": "../net/index.mjs",
-		"wonk-mbedtls": "../mbedtls/dist/index.mjs",
-		"wonk-peerid": "../peerid/index.mjs"
+		"wonk-peerid": "../peerid/index.mjs",
+		"wonk-peercon": "../peercon/index.mjs"
 	}
 }

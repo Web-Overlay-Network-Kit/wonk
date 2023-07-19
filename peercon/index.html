@@ -12,10 +12,10 @@
 	import { PeerCon, Address } from 'wonk-peercon';
 	import { PeerId } from 'wonk-peerid';
 
-	let addr = new Address({ peer_id: PeerId.from_string('OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio'), hostname: '[::]' });
+	const addr = new Address({ peer_id: PeerId.from_string('OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio'), hostname: 'local.evan-brass.net' });
 	console.log(String(addr));
-	addr = Address.from_string('OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio,[::],l01bb');
-	console.log(addr);
+	// const addr = Address.from_string('OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio,local.evan-brass.net,u0d96');
+	// console.log(addr);
 
 	const conn = await PeerCon.connect_address(addr);
 </script>
