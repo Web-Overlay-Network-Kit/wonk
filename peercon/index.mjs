@@ -180,7 +180,7 @@ a=sctp-port:5000
 		conn.connected.then(() => {
 			conn.setConfiguration(config);
 			conn.restartIce();
-		});
+		}).catch(() => {});
 
 		return conn;
 	}
