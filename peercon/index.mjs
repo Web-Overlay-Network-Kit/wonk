@@ -91,7 +91,8 @@ export class PeerCon extends RTCPeerConnection {
 		});
 
 		// Spawn the signalling / renegotiation task:
-		this.#signaling_task();
+		this.#signaling_task()
+			.catch(() => {}); // Don't leave the promise uncaught
 	}
 	async #signaling_task() {
 		const ice_candidates = [];
@@ -111,6 +112,7 @@ export class PeerCon extends RTCPeerConnection {
 			this.#dc.addEventListener('error', rej, {once: true});
 			this.#dc.addEventListener('closing', rej, {once: true});
 		});
+		this.connected.catch(() => {}); // Don't leave the promise uncaught
 
 		await this.setLocalDescription();
 		await ice_complete;
