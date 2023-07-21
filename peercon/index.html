@@ -10,14 +10,24 @@
 </script>
 <script type="module">
 	import { PeerCon, Address } from 'wonk-peercon';
-	import { PeerId } from 'wonk-peerid';
+	// import { pid } from 'wonk-identity';
+	import { PeerId, advanced_usage } from 'wonk-peerid';
 
-	const addr = new Address({ peer_id: PeerId.from_string('OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio'), hostname: 'local.evan-brass.net' });
+	window.Address = Address;
+
+	// const t = new Address({ peer_id: pid, host: 'local.evan-brass.net:443' });
+	// console.log(t);
+
+	// advanced_usage.id_fingerprint = 'sha-1';
+	// // console.log(pid);
+
+	const addr = new Address('tcp:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio@local.evan-brass.net:80');
 	console.log(String(addr));
 	// const addr = Address.from_string('OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio,local.evan-brass.net,u0d96');
 	// console.log(addr);
 
 	const conn = await PeerCon.connect_address(addr);
+	console.log(conn);
 </script>
 <script type="_module">
 	import { OwnPeerId, PeerId, advanced_usage } from 'wonk-peerid';

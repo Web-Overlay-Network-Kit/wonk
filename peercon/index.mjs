@@ -162,7 +162,7 @@ a=sctp-port:5000
 	} = {}) {
 		const temp_config = Object.create(config);
 		temp_config.iceServers = [
-			{ urls: address.urls(), username: address.username(local_id), credential: address.credential() }
+			{ urls: address.urls, username: address.username(local_id), credential: address.credential }
 		];
 		temp_config.iceTransportPolicy = 'relay';
 
@@ -172,7 +172,7 @@ a=sctp-port:5000
 		conn.remote_msg = new SigMsg({
 			id: local_id,
 			ice_ufrag: local_msg.ice_pwd,
-			ice_pwd: address.ice_pwd(),
+			ice_pwd: address.ice_pwd,
 			ice_candidates: gen_candidate()
 		});
 

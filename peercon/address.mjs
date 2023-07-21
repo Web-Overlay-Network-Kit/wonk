@@ -1,66 +1,98 @@
 import { pid } from 'wonk-identity';
 import { PeerId, b64url } from 'wonk-peerid';
 
-function gen_token(len = 16) {
+export function gen_token(len = 16) {
 	const bytes = crypto.getRandomValues(new Uint8Array(len));
 	return b64url.btoa_url(b64url.buftobinstr(bytes));
 }
 
-const proto = {
-	t: 'turn', u: 'turn',
-	l: 'turns', d: 'turns'
+const proto_turn = {
+	tcp: 'turn',
+	tls: 'turns',
+	udp: 'turn'
 };
-const transport = {
-	t: '', l: '',
-	u: '?transport=udp', d: '?transport=udp'
+const proto_search = {
+	tcp: '',
+	tls: '',
+	udp: '?transport=udp'
 };
+const proto_ports = {
+	tcp: 80,
+	tls: 443,
+	udp: 3478
+};
+
 
 export class Address {
-	peer_id;
-	hostname = '';
-	ports = { l: 443 };
-	token;
-	constructor() { Object.assign(this, ...arguments); }
+	#a;
+	#b;
+	protocol = 'tls';
+	constructor(s = 'tls:localhost') {
+		this.#a = new URL(s);
+		this.#b = new URL(s);
 
-	urls() {
-		return Object.entries(this.ports).map(
-			([key, port]) => `${proto[key]}:${this.hostname}:${port}${transport[key]}`
-		);
+		this.protocol = this.#a.protocol.replaceAll(':', '');
+
+		this.#a.protocol = 'http';
+		this.#b.protocol = 'https';
 	}
+
+	get inner() {
+		return (this.#a.port) ? this.#a : this.#b; // Return whichever inner URL is better
+	}
+
+	get token() {
+		return this.inner.password;
+	}
+	set token(token) {
+		this.#a.password = token;
+		this.#b.password = token;
+	}
+	get peer_id() {
+		return PeerId.from_string(this.inner.username);
+	}
+	set peer_id(peer_id) {
+		this.#a.username = String(peer_id);
+		this.#b.username = String(peer_id);
+	}
+	get urls() {
+		return [`${proto_turn[this.protocol]}:${this.host}${proto_search[this.protocol]}`];
+	}
+	get hostname() {
+		return this.inner.hostname;
+	}
+	set hostname(hostname) {
+		this.#a.hostname = hostname;
+		this.#b.hostname = hostname;
+	}
+	get host() {
+		return this.inner.host;
+	}
+	set host(host) {
+		this.#a.host = host;
+		this.#b.host = host;
+	}
+	get port() {
+		return this.inner.port || proto_ports[this.protocol];
+	}
+	set port(port) {
+		this.#a.port = port;
+		this.#b.port = port;
+	}
+
 	username(local_id = pid) {
-		const token = this.token || gen_token();
-		return `${this.peer_id}.${local_id}.${token}`;
+		return `${this.peer_id}.${local_id}.${this.token || gen_token()}`;
 	}
-	credential() {
+	get credential() {
 		return 'the/turn/password/constant';
 	}
-	ice_pwd() {
+	get ice_pwd() {
 		return 'the/ice/password/constant';
 	}
 
-	static from_string(s) {
-		let [peer_id, hostname, ports_s, token] = s.split(',');
-		peer_id = PeerId.from_string(peer_id);
-		const reg = /([tlud])([0-9a-fA-F]{4})/g;
-		const ports = {};
-		let res;
-		while (res = reg.exec(ports_s)) {
-			const { 1: key, 2: port } = res;
-			ports[key] = parseInt(port, 16);
-		}
-
-		return new this({ peer_id, hostname, ports, token });
-	}
-	[Symbol.toPrimitive](hint) {
-		if (hint == 'string') {
-			let ports = '';
-			for (const [key, port] of Object.entries(this.ports)) {
-				ports += key + port.toString(16).padStart(4, '0');
-			}
-			let ret = `${this.peer_id},${this.hostname},${ports}`;
-			if (this.token) ret += ',' + this.token;
-			return ret;
-		}
-		return;
+	[Symbol.toPrimitive](_hint) {
+		return String(this.inner)
+			.replace(/https?:\/\//, this.protocol + ':') // Switch to the actual protocol and remove `//` that http has.
+			.replace(/\/$/, ''); // Remove trailing slash.
 	}
 }
