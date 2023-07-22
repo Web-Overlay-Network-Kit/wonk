@@ -1,9 +1,25 @@
 
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
 export class ParseError extends Error {
 	constructor(reason) {
 		super(`Parse Error: ${reason}`);
 	}
 }
+
+
+const named = new Map();
+named.set(0x0006, function username(view) { return decoder.decode(new Uint8Array(view.buffer, view.byteOffset, view.byteLength)); });
+named.set(0x0009, function error() {
+
+});
+named.set(0x0014, function realm(view) { return decoder.decode(new Uint8Array(view.buffer, view.byteOffset, view.byteLength)); });
+named.set(0x0015, function nonce(view) { return decoder.decode(new Uint8Array(view.buffer, view.byteOffset, view.byteLength)); });
+named.set(0x0020, function addr() {});
+named.set(0x000C, function channel() {});
+named.set(0x0012, function peer_addr() {});
+named.set(0x0013, function data(view) { return new Uint8Array(view.buffer, view.byteOffset, view.byteLength); });
 
 export class Turn {
 	view;
@@ -64,6 +80,8 @@ export class Turn {
 		const reader = readable.getReader({mode: 'byob'});
 		let buffer = new ArrayBuffer(buff_len);
 		let available = 0;
+		let closed = false;
+		reader.closed.then(() => closed = true);
 		async function need(len) {
 			if (len > buffer.byteLength) throw new Error('too big');
 			while (available < len) {
@@ -100,7 +118,7 @@ export class Turn {
 			await reader.cancel(String(e));
 			if (e != null) throw e; // Rethrow anything that isn't an end of stream.
 		} finally {
-			reader.releaseLock();
+			if (!closed) reader.releaseLock();
 		}
 	}
 }
@@ -168,6 +186,13 @@ export class Stun extends Turn {
 		for (const _ of this.attrs()) {}
 	}
 
+	async check_auth() {
+		
+	}
+	async auth() {
+
+	}
+
 	*attrs() {
 		let i = this.constructor.header_size;
 		while ((i + 4) < (this.constructor.header_size + this.length)) {
@@ -188,20 +213,44 @@ export class Stun extends Turn {
 	get attributes() {
 		const ret = new Map();
 		for (const {type, value} of this.attrs()) {
-			if (!ret.has(type)) ret.set(type, value);
+			if (ret.has(type)) continue;
+			ret.set(type, value);
+			const parse_func = named.get(type);
+			if (parse_func) ret.set(parse_func.name, parse_func(value));
 		}
 		return ret;
 	}
 	add_attribute(type, length) {
 		let i = this.constructor.header_size + this.length;
 		this.length += 4 + length;
-		this.data.setUint16(i, type);
-		this.data.setUint16(i + 2, length);
-		return new DataView(this.view.buffer, this.view.byteOffset + i + 4, length);
+		this.view.setUint16(i, type);
+		this.view.setUint16(i + 2, length);
+		const ret = new DataView(this.view.buffer, this.view.byteOffset + i + 4, length);
+		new Uint8Array(ret.buffer, ret.byteOffset, ret.byteLength).fill(0);
+		return ret;
 	}
 
 	set_error(code, reason) {
-
+		reason = encoder.encode(reason);
+		const view = this.add_attribute(0x0009, 4 + reason.byteLength);
+		view.setUint8(2, Math.trunc(code / 100));
+		view.setUint8(3, code % 100);
+		new Uint8Array(view.buffer, view.byteOffset + 4, reason.byteLength).set(reason);
+		return this;
+	}
+	set_text(type, text) {
+		const encoded = encoder.encode(text);
+		const view = this.add_attribute(type, encoded.byteLength);
+		new Uint8Array(view.buffer, view.byteOffset, view.byteLength).set(encoded);
+		return this;
+	}
+	set_realm(realm) {
+		this.set_text(0x0014, realm);
+		return this;
+	}
+	set_nonce(nonce) {
+		this.set_text(0x0015, nonce);
+		return this;
 	}
 }
 
