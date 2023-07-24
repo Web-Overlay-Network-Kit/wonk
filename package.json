@@ -5,6 +5,7 @@
 		"./identity",
 		"./peercon",
 		"./mbedtls",
-		"./net"
+		"./net",
+		"./dc-proxy"
 	]
 }
