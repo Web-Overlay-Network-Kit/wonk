@@ -1,6 +1,22 @@
 import { pid } from 'wonk-identity';
 import { PeerId, b64url } from 'wonk-peerid';
 
+/**
+ * === Examples (Aspirational, not working yet) ===
+ * udp:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio@local.evan-brass.net:4666
+ * - Connect via a proxy (turn:local.evan-brass.net:4666?transport=udp)
+ * - Connect to peer OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio
+ * - Randomly generate a token for the connection (Not answering an existing connection)
+ * 
+ * tls:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio:MJfyvbCdukmQpaow-vAqXg@local.evan-brass.net
+ * - Answer a connection from OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio (identified via token MJfyvbCdukmQpaow-vAqXg)
+ * - Connect via a proxy (turns:local.evan-brass.net:443)
+ * 
+ * web3:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio/p2p-chat
+ * - Connect via auto discovery
+ * - Create a datachannel on that connection to the p2p-chat service
+ */
+
 export function gen_token(len = 16) {
 	const bytes = crypto.getRandomValues(new Uint8Array(len));
 	return b64url.btoa_url(b64url.buftobinstr(bytes));
