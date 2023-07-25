@@ -1,28 +1,35 @@
-import { Turn } from './turn.mjs';
+import { Turn, CredentialManager, ConnTestCM } from './turn.mjs';
 
 const listener = Deno.listenDatagram({ transport: 'udp', port: 4666 });
+
+const cm = new CredentialManager();
 
 for await (const [packet, addr] of listener) {
 	const view = new DataView(packet.buffer, packet.byteOffset, packet.byteLength);
 	const turn = Turn.parse_packet(view);
-	const attr = turn.attributes;
+
 	turn.length = 0; // Clear the packet so that we can reuse it for the response
 	
 	console.log(addr, turn.class, turn.method);
 	
 	// STUN Binding Request:
 	if (turn.class == 0 && turn.method == 1) {
-		turn.class = 3;
-		turn.set_addr(addr);
+		turn.class = 2;
+		turn.mapped = addr;
+		turn.xmapped = addr;
+	}
+	// Everything else requires authentication
+	else if (!await turn.check_auth(cm)) {
+
 	}
 	// Require authentication:
-	else if (!attr.has('username')) {
-		// Return a 401
-		turn.class = 3;
-		turn.set_nonce('nonce');
-		turn.set_realm('realm');
-		turn.set_error(401, '');
-	}
+	// else if (!attr.has('username')) {
+	// 	// Return a 401
+	// 	turn.class = 3;
+	// 	turn.nonce = 'nonce';
+	// 	turn.realm = 'realm';
+	// 	turn.error = {code: 401};
+	// }
 	else { continue; }
 
 	listener.send(turn.packet, addr);

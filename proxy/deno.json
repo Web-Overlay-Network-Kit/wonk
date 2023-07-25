@@ -1,5 +1,6 @@
 {
 	"imports": {
+		"proxy-rs": "../proxy-rs/pkg/proxy_rs.js",
 		"wonk-net": "../net/index.mjs",
 		"wonk-peerid": "../peerid/index.mjs",
 		"wonk-peercon": "../peercon/index.mjs"

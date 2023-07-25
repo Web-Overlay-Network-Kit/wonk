@@ -6,6 +6,7 @@
 		"./peercon",
 		"./mbedtls",
 		"./net",
-		"./dc-proxy"
+		"./dc-proxy",
+		"./proxy-rs/pkg"
 	]
 }

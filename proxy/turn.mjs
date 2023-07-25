@@ -1,3 +1,6 @@
+import { md5 } from './md5.mjs';
+import { crc32 } from './crc32.mjs';
+import { encode_addr } from 'proxy-rs';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -8,18 +11,30 @@ export class ParseError extends Error {
 	}
 }
 
+export class CredentialManager {
+	async short_term(_username, password = 'the/ice/password/constant') {
+		const key_data = encoder.encode(password);
+		return await crypto.subtle.importKey('raw', key_data, {
+			name: 'HMAC',
+			hash: 'SHA-1'
+		}, false, ['sign', 'verify']);
+	}
+	async long_term(username, realm, password = 'the/turn/password/constant') {
+		const key_data = md5(encoder.encode(`${username}:${realm}:${password}`));
+		return await crypto.subtle.importKey('raw', key_data, {
+			name: 'HMAC',
+			hash: 'SHA-1'
+		}, false, ['sign', 'verify']);
+	}
+}
+export class ConnTestCM extends CredentialManager {
+	async short_term(username) {
+		const [r_ufrag, l_ufrag] = username.split(':');
+		if (!r_ufrag || !l_ufrag) return false;
 
-const named = new Map();
-named.set(0x0006, function username(view) { return decoder.decode(new Uint8Array(view.buffer, view.byteOffset, view.byteLength)); });
-named.set(0x0009, function error() {
-
-});
-named.set(0x0014, function realm(view) { return decoder.decode(new Uint8Array(view.buffer, view.byteOffset, view.byteLength)); });
-named.set(0x0015, function nonce(view) { return decoder.decode(new Uint8Array(view.buffer, view.byteOffset, view.byteLength)); });
-named.set(0x0020, function addr() {});
-named.set(0x000C, function channel() {});
-named.set(0x0012, function peer_addr() {});
-named.set(0x0013, function data(view) { return new Uint8Array(view.buffer, view.byteOffset, view.byteLength); });
+		return await super.short_term(username, l_ufrag); // It's either l_ufrag or r_ufrag... my brain can't figure it our right now so we'll just trial and error it...
+	}
+}
 
 export class Turn {
 	view;
@@ -41,8 +56,10 @@ export class Turn {
 			const old = new Uint8Array(this.view.buffer, this.view.byteOffset, this.view.byteLength);
 			const neww = new Uint8Array(Math.max(2 * this.view.byteLength, packet_length));
 			neww.set(old);
+			neww.fill(0, old.byteLength);
 			this.view = new DataView(neww.buffer);
 		}
+
 		this.view.setUint16(2, new_len);
 	}
 	get kind() {
@@ -125,6 +142,7 @@ export class Turn {
 
 export class Stun extends Turn {
 	static header_size = 20;
+	#attributes = false;
 	get class() {
 		const type = this.view.getUint16(0);
 		return ((type & 0b00_00000_1_000_0_0000) >> 7) |
@@ -156,6 +174,7 @@ export class Stun extends Turn {
 
 	get length() { return super.length; }
 	set length(new_val) {
+		this.#attributes = false;
 		// Pad to 4 bytes:
 		while (new_val % 4 != 0) new_val += 1;
 		super.length = new_val;
@@ -165,8 +184,11 @@ export class Stun extends Turn {
 		return this.view.getUint32(4);
 	}
 
+	get txid_buf() {
+		return new Uint8Array(this.view.buffer, 8, 12);
+	}
 	get txid() {
-		return new Uint8Array(this.view.buffer, 8, 12).reduce((a, v) => a + String.fromCharCode(v), '');
+		return this.txid_buf.reduce((a, v) => a + String.fromCharCode(v), '');
 	}
 	set txid(txid) {
 		new Uint8Array(this.view.buffer, 8, 12).set(
@@ -177,7 +199,11 @@ export class Stun extends Turn {
 	constructor() {
 		super(...arguments);
 
-		if (arguments.length == 0) this.view.setUint32(4, 0x2112A442);
+		if (arguments.length == 0) {
+			this.view.setUint32(4, 0x2112A442);
+			// Write a random txid as well:
+			crypto.getRandomValues(this.txid_buf);
+		}
 		else if (this.magic != 0x2112A442) throw new Error("Invalid magic value.");
 
 		if (this.length % 4 != 0) throw new Error("STUN not padded.");
@@ -186,15 +212,26 @@ export class Stun extends Turn {
 		for (const _ of this.attrs()) {}
 	}
 
-	async check_auth() {
+	async check_auth(credential_manager) {
 		
 	}
-	async auth() {
-
+	clear_auth() {
+		// Remove any existing fingerprint or message integrity:
+		this.remove_attribute(0x8028);
+		this.remove_attribute(0x0008);
+	}
+	async auth(credential_manager) {
+		this.clear_auth();
+		// TODO:
+	}
+	fingerprint() {
+		this.remove_attribute(0x8028);
 	}
 
+	// Attribute helpers
 	*attrs() {
 		let i = this.constructor.header_size;
+		let seen_message_integrity = false;
 		while ((i + 4) < (this.constructor.header_size + this.length)) {
 			const type = this.view.getUint16(i);
 			i += 2;
@@ -203,22 +240,79 @@ export class Stun extends Turn {
 			if (i + length > (this.constructor.header_size + this.length)) throw new ParseError("STUN Attribute has a length that exceed's the packet's length.");
 			const value = new DataView(this.view.buffer, this.view.byteOffset + i, length);
 
+			if (type == 0x0008) {
+				// We don't check the message integrity because that would be async and requires a credential manager.
+				seen_message_integrity = true;
+			}
+
+			if (type == 0x8028) {
+				// TODO: check the fingerprint
+				break;
+			}
+
 			// Re-align
 			i += length;
 			while (i % 4 != 0) i += 1;
 
+			// Don't yield any attributes after the message integrity
+			if (seen_message_integrity) continue;
+
 			yield { type, length, value };
 		}
 	}
-	get attributes() {
-		const ret = new Map();
-		for (const {type, value} of this.attrs()) {
-			if (ret.has(type)) continue;
-			ret.set(type, value);
-			const parse_func = named.get(type);
-			if (parse_func) ret.set(parse_func.name, parse_func(value));
+	get attr() {
+		if (!this.#attributes) {
+			const ret = new Map();
+			for (const {type, value} of this.attrs()) {
+				if (ret.has(type)) continue;
+				ret.set(type, value);
+			}
+			this.#attributes = ret;
 		}
-		return ret;
+		return this.#attributes;
+	}
+	set_attribute(type, length) {
+		const existing = this.attr.get(type);
+		let view;
+		if (existing) {
+			let padded_len = length;
+			while (padded_len % 4 != 0) padded_len += 1;
+			let existing_padded_len = existing.byteLength;
+			while (existing_padded_len % 4 != 0) existing_padded_len += 1;
+
+			if (padded_len != existing_padded_len) {
+				this.remove_attribute(type);
+			}
+			else {
+				// Update the length field:
+				new DataView(existing.buffer, view.byteOffset - 2, 2).setUint16(length);
+				view = existing;
+			}
+		}
+		if (!view) view = this.add_attribute(type, length);
+
+		return view;
+	}
+	remove_attribute(type) {
+		const existing = this.attr.get(type);
+		if (!existing) return;
+
+		let remove_len = existing.byteLength + 4;
+		while (remove_len % 4 != 0) remove_len += 1;
+
+		const remove_start = existing.byteOffset - 4;
+		const before_len = (remove_start - this.view.byteOffset - this.constructor.header_size);
+		const shift_len = this.length - before_len - remove_len;
+
+		// Shift the rest of the attributes to overwrite the existing attribute:
+		new Uint8Array(existing.buffer, remove_start)
+			.set(new Uint8Array(existing.buffer, remove_start + remove_len, shift_len));
+
+		// Adjust the length:
+		this.length -= remove_len;
+
+		// Reset the attributes map:
+		this.#attributes = false;
 	}
 	add_attribute(type, length) {
 		let i = this.constructor.header_size + this.length;
@@ -229,29 +323,159 @@ export class Stun extends Turn {
 		new Uint8Array(ret.buffer, ret.byteOffset, ret.byteLength).fill(0);
 		return ret;
 	}
+	get_text_attr(type) {
+		const view = this.attr.get(type);
+		if (!view) return;
+		return decoder.decode(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+	}
+	set_text_attr(type, value) {
+		if (typeof value != 'string') {
+			this.remove_attribute(type);
+		} else {
+			const encoded = encoder.encode(value);
+			const view = this.set_attribute(type, encoded.byteLength);
+			new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+				.set(encoded);
+		}
+		return true;
+	}
+	get_buffer_attr(type) {
+		const view = this.attr.get(type);
+		if (!view) return;
+		return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+	}
+	set_buffer_attr(type, value) {
+		if (value instanceof ArrayBuffer) {
+			value = new Uint8Array(value);
+		}
+		if (!ArrayBuffer.isView(value)) {
+			this.remove_attribute(type);
+		} else {
+			if (!(value instanceof Uint8Array)) {
+				value = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+			}
+			const view = this.set_attribute(type, value.byteLength);
+			new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+				.set(value);
+		}
+		return true;
+	}
+	get_addr_attr(type, { transport = 'udp', xor = true } = {}) {
+		const view = this.attr.get(type);
+		if (!view) return;
+		const family = view.getUint8(1);
+		const port = view.getUint16(2);
+		let addr_bytes = new Uint8Array(view.buffer, view.byteOffset + 4, view.byteLength - 4);
+		if (xor) {
+			port = port ^ 0x2112;
+			addr_bytes = addr_bytes.map((v, i) => v ^ this.view.getUint8(4 + i));
+		}
+		let hostname = '';
+		if (family == 0x01) {
+			if (addr_bytes.byteLength != 4) return;
+			hostname = addr_bytes.join('.');
+		} else if (family == 0x02) {
+			if (addr_bytes.byteLength != 16) return;
+			const view = new DataView(addr_bytes.buffer, addr_bytes.byteOffset, addr_bytes.byteLength);
+			for (let i = 4; i < 20; i += 2) {
+				if (!hostname) hostname += ':';
+				hostname += view.getUint16(i).toString(16);
+			}
+		} else {
+			return;
+		}
+		return { hostname, port, transport };
+	}
+	set_addr_attr(type, value, { xor = true } = {}) {
+		if (!value) {
+			this.remove_attribute(type);
+		} else {
+			const { hostname, port = 80 } = value;
+			const bytes = encode_addr(hostname, port);
+			if (!bytes) throw new Error("Hostname wasn't a valid ip address.");
+			const view = this.set_attribute(type, bytes.byteLength);
+			if (xor) {
+				for (let i = 4; i < bytes.byteLength; i += 1) {
+					bytes[i] = bytes[i] ^ this.view.getUint8(4 + i);
+				}
+			}
+			new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+				.set(bytes);
+		}
+		return true;
+	}
 
-	set_error(code, reason) {
-		reason = encoder.encode(reason);
-		const view = this.add_attribute(0x0009, 4 + reason.byteLength);
-		view.setUint8(2, Math.trunc(code / 100));
-		view.setUint8(3, code % 100);
-		new Uint8Array(view.buffer, view.byteOffset + 4, reason.byteLength).set(reason);
+	// Attributes: (TODO: DRY)
+	get username() {
+		return this.get_text_attr(0x0006);
+	}
+	set username(value) {
+		return this.set_text_attr(0x0006, value);
+	}
+	get realm() {
+		return this.get_text_attr(0x0014);
+	}
+	set realm(value) {
+		return this.set_text_attr(0x0014, value);
+	}
+	get nonce() {
+		return this.get_text_attr(0x0015);
+	}
+	set nonce(value) {
+		return this.set_text_attr(0x0015, value);
+	}
+	get error() {
+		const view = this.attr.get(0x0009);
+		if (!view) return;
+		const code = view.getUint8(2) * 100 + view.getUint8(3);
+		const reason = decoder.decode(new Uint8Array(view.buffer, view.byteOffset + 4, view.byteLength - 4));
+		return { code, reason };
+	}
+	set error(error) {
+		if (!error) {
+			this.remove_attribute(0x0009);
+		} else {
+			let { code = 404, reason = '' } = error;
+			reason = encoder.encode(reason);
+			const view = this.add_attribute(0x0009, 4 + reason.byteLength);
+			view.setUint16(0, 0);
+			view.setUint8(2, Math.trunc(code / 100));
+			view.setUint8(3, code % 100);
+			new Uint8Array(view.buffer, view.byteOffset + 4, reason.byteLength).set(reason);
+		}
 		return this;
 	}
-	set_text(type, text) {
-		const encoded = encoder.encode(text);
-		const view = this.add_attribute(type, encoded.byteLength);
-		new Uint8Array(view.buffer, view.byteOffset, view.byteLength).set(encoded);
-		return this;
+	get data() {
+		return this.get_buffer_attr(0x0013);
 	}
-	set_realm(realm) {
-		this.set_text(0x0014, realm);
-		return this;
+	set data(value) {
+		return this.set_buffer_attr(0x0013, value);
 	}
-	set_nonce(nonce) {
-		this.set_text(0x0015, nonce);
-		return this;
+	get mapped() {
+		return this.get_addr_attr(0x0001, {xor: false});
 	}
+	set mapped(value) {
+		return this.set_addr_attr(0x0001, value, {xor: false});
+	}
+	get xmapped() {
+		return this.get_addr_attr(0x0020);
+	}
+	set xmapped(value) {
+		return this.set_addr_attr(0x0020, value);
+	}
+	get xpeer() {
+		return this.get_addr_attr(0x0012);
+	}
+	set xpeer(value) {
+		return this.set_addr_attr(0x0012, value);
+	}
+	get xrelay() {
+		return this.get_addr_attr(0x0016);
+	}
+	set xrelay(value) {
+		return this.set_addr_attr(0x0016, value);
+	}
+
 }
 
 export class ChannelData extends Turn {
