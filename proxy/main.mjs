@@ -21,7 +21,7 @@ for await (const [packet, addr] of listener) {
 		res.xmapped = addr;
 	}
 	// Everything else requires authentication
-	else if (!await turn.check_auth(cm)) {
+	else if (turn.class == 0 && !await turn.check_auth(cm)) {
 		res.class = 3;
 		res.error = {code: 401};
 		res.nonce = 'nonce';
@@ -33,7 +33,7 @@ for await (const [packet, addr] of listener) {
 		res.username = turn.username;
 		res.realm = 'realm';
 		res.nonce = 'nonce';
-		res.xrelay = addr;
+		res.xrelay = addr; // TODO: If the transport is TCP, then we shouldn't use addr as the relayed address.
 		res.xmapped = addr;
 		res.lifetime = 3600;
 		await res.auth(cm);
