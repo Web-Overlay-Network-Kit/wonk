@@ -1,4 +1,4 @@
-import { Turn, CredentialManager, ConnTestCM } from './turn.mjs';
+import { Turn, Stun, CredentialManager, ConnTestCM } from './turn.mjs';
 
 const listener = Deno.listenDatagram({ transport: 'udp', port: 4666 });
 
@@ -7,20 +7,32 @@ const cm = new CredentialManager();
 for await (const [packet, addr] of listener) {
 	const view = new DataView(packet.buffer, packet.byteOffset, packet.byteLength);
 	const turn = Turn.parse_packet(view);
+	const res = new Stun();
+	res.method = turn.method;
+	res.txid = turn.txid;
 
-	turn.length = 0; // Clear the packet so that we can reuse it for the response
-	
-	console.log(addr, turn.class, turn.method);
+	// console.log(addr, turn.class, turn.method);
 	
 	// STUN Binding Request:
 	if (turn.class == 0 && turn.method == 1) {
-		turn.class = 2;
-		turn.mapped = addr;
-		turn.xmapped = addr;
+		res.class = 2;
+		res.mapped = addr;
+		res.xmapped = addr;
 	}
 	// Everything else requires authentication
 	else if (!await turn.check_auth(cm)) {
-
+		res.class = 3;
+		res.error = {code: 401};
+		res.nonce = 'nonce';
+		res.realm = 'realm';
+	}
+	// TURN Allocate
+	else if (turn.class == 0 && turn.method == 3) {
+		res.class = 2;
+		res.username = turn.username;
+		res.nonce = 'nonce';
+		res.realm = 'realm';
+		await res.auth(cm);
 	}
 	// Require authentication:
 	// else if (!attr.has('username')) {
@@ -30,9 +42,9 @@ for await (const [packet, addr] of listener) {
 	// 	turn.realm = 'realm';
 	// 	turn.error = {code: 401};
 	// }
-	else { continue; }
+	else { console.log('authenticated'); continue; }
 
-	listener.send(turn.packet, addr);
+	await listener.send(res.packet, addr);
 }
 
 

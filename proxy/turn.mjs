@@ -12,6 +12,7 @@ export class ParseError extends Error {
 }
 
 export class CredentialManager {
+	async credential(username, realm, )
 	async short_term(_username, password = 'the/ice/password/constant') {
 		const key_data = encoder.encode(password);
 		return await crypto.subtle.importKey('raw', key_data, {
@@ -20,7 +21,7 @@ export class CredentialManager {
 		}, false, ['sign', 'verify']);
 	}
 	async long_term(username, realm, password = 'the/turn/password/constant') {
-		const key_data = md5(encoder.encode(`${username}:${realm}:${password}`));
+		const key_data = md5(`${username}:${realm}:${password}`);
 		return await crypto.subtle.importKey('raw', key_data, {
 			name: 'HMAC',
 			hash: 'SHA-1'
@@ -213,16 +214,32 @@ export class Stun extends Turn {
 	}
 
 	async check_auth(credential_manager) {
-		
+		const realm = this.realm;
+		const username = this.username;
+		const integrity = this.integrity;
+		if (!username || !integrity) return false;
+		const key = await ((typeof realm == 'string') ?
+			credential_manager.long_term(username, realm) :
+			credential_manager.short_term(username)
+		);
+		if (!key) return false;
+		const true_length = this.length;
+		const temp_length = integrity.byteOffset - this.view.byteOffset - 20 + 20;
+		this.view.setUint16(2, temp_length);
+		const data = new Uint8Array(this.view.buffer, this.view.byteOffset, (integrity.byteOffset - 4 - this.view.byteOffset));
+		const valid = await crypto.subtle.verify('HMAC', key, integrity, data);
+		this.view.setUint16(2, true_length);
+		return valid;
 	}
 	clear_auth() {
 		// Remove any existing fingerprint or message integrity:
 		this.remove_attribute(0x8028);
 		this.remove_attribute(0x0008);
 	}
-	async auth(credential_manager) {
+	async auth(credential_manager, username, realm) {
+		if (!username) throw new Error();
+
 		this.clear_auth();
-		// TODO:
 	}
 	fingerprint() {
 		this.remove_attribute(0x8028);
@@ -240,11 +257,6 @@ export class Stun extends Turn {
 			if (i + length > (this.constructor.header_size + this.length)) throw new ParseError("STUN Attribute has a length that exceed's the packet's length.");
 			const value = new DataView(this.view.buffer, this.view.byteOffset + i, length);
 
-			if (type == 0x0008) {
-				// We don't check the message integrity because that would be async and requires a credential manager.
-				seen_message_integrity = true;
-			}
-
 			if (type == 0x8028) {
 				// TODO: check the fingerprint
 				break;
@@ -256,6 +268,7 @@ export class Stun extends Turn {
 
 			// Don't yield any attributes after the message integrity
 			if (seen_message_integrity) continue;
+			if (type == 0x0008) seen_message_integrity = true;
 
 			yield { type, length, value };
 		}
@@ -395,8 +408,10 @@ export class Stun extends Turn {
 			if (!bytes) throw new Error("Hostname wasn't a valid ip address.");
 			const view = this.set_attribute(type, bytes.byteLength);
 			if (xor) {
+				bytes[2] = bytes[2] ^ 0x21;
+				bytes[3] = bytes[3] ^ 0x12;
 				for (let i = 4; i < bytes.byteLength; i += 1) {
-					bytes[i] = bytes[i] ^ this.view.getUint8(4 + i);
+					bytes[i] = bytes[i] ^ this.view.getUint8(i);
 				}
 			}
 			new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
@@ -450,6 +465,14 @@ export class Stun extends Turn {
 	}
 	set data(value) {
 		return this.set_buffer_attr(0x0013, value);
+	}
+	get integrity() {
+		const buff = this.get_buffer_attr(0x0008);
+		if (buff?.byteLength != 20) return;
+		return buff;
+	}
+	set integrity(value) {
+		return this.set_buffer_attr(0x0008, value);
 	}
 	get mapped() {
 		return this.get_addr_attr(0x0001, {xor: false});
