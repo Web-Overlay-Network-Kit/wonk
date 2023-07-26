@@ -12,28 +12,15 @@ export class ParseError extends Error {
 }
 
 export class CredentialManager {
-	async credential(username, realm, )
-	async short_term(_username, password = 'the/ice/password/constant') {
-		const key_data = encoder.encode(password);
+	// TODO: Should we cache the keys?
+	async credential(username, realm, password = realm ? 'the/turn/password/constant' : 'the/ice/password/constant') {
+		const key_data = realm ? 
+			md5(`${username}:${realm}:${password}`) :
+			encoder.encode(password);
 		return await crypto.subtle.importKey('raw', key_data, {
 			name: 'HMAC',
 			hash: 'SHA-1'
 		}, false, ['sign', 'verify']);
-	}
-	async long_term(username, realm, password = 'the/turn/password/constant') {
-		const key_data = md5(`${username}:${realm}:${password}`);
-		return await crypto.subtle.importKey('raw', key_data, {
-			name: 'HMAC',
-			hash: 'SHA-1'
-		}, false, ['sign', 'verify']);
-	}
-}
-export class ConnTestCM extends CredentialManager {
-	async short_term(username) {
-		const [r_ufrag, l_ufrag] = username.split(':');
-		if (!r_ufrag || !l_ufrag) return false;
-
-		return await super.short_term(username, l_ufrag); // It's either l_ufrag or r_ufrag... my brain can't figure it our right now so we'll just trial and error it...
 	}
 }
 
@@ -214,21 +201,23 @@ export class Stun extends Turn {
 	}
 
 	async check_auth(credential_manager) {
-		const realm = this.realm;
 		const username = this.username;
 		const integrity = this.integrity;
 		if (!username || !integrity) return false;
-		const key = await ((typeof realm == 'string') ?
-			credential_manager.long_term(username, realm) :
-			credential_manager.short_term(username)
-		);
+
+		const realm = this.realm;
+		const key = await credential_manager.credential(username, realm);
 		if (!key) return false;
+
 		const true_length = this.length;
 		const temp_length = integrity.byteOffset - this.view.byteOffset - 20 + 20;
 		this.view.setUint16(2, temp_length);
+		
 		const data = new Uint8Array(this.view.buffer, this.view.byteOffset, (integrity.byteOffset - 4 - this.view.byteOffset));
 		const valid = await crypto.subtle.verify('HMAC', key, integrity, data);
+		
 		this.view.setUint16(2, true_length);
+		
 		return valid;
 	}
 	clear_auth() {
@@ -236,10 +225,22 @@ export class Stun extends Turn {
 		this.remove_attribute(0x8028);
 		this.remove_attribute(0x0008);
 	}
-	async auth(credential_manager, username, realm) {
-		if (!username) throw new Error();
-
+	async auth(credential_manager) {
 		this.clear_auth();
+
+		const username = this.username;
+		const realm = this.realm;
+		if (!username) throw new Error('The username attribute must be set before authenticating a message.');
+
+		const key = await credential_manager.credential(username, realm);
+		if (!key) throw new Error("No key for this username.");
+
+		const view = this.add_attribute(0x0008, 20);
+		const length = view.byteOffset - 4 - this.view.byteOffset;
+		const data = new Uint8Array(view.buffer, this.view.byteOffset, length);
+		const mac = await crypto.subtle.sign('HMAC', key, data);
+		new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+			.set(new Uint8Array(mac));
 	}
 	fingerprint() {
 		this.remove_attribute(0x8028);
@@ -258,7 +259,7 @@ export class Stun extends Turn {
 			const value = new DataView(this.view.buffer, this.view.byteOffset + i, length);
 
 			if (type == 0x8028) {
-				// TODO: check the fingerprint
+				// TODO: check the fingerprint?
 				break;
 			}
 
@@ -498,7 +499,16 @@ export class Stun extends Turn {
 	set xrelay(value) {
 		return this.set_addr_attr(0x0016, value);
 	}
-
+	get lifetime() {
+		const view = this.attrs.get(0x000d);
+		if (view?.byteLength != 4) return;
+		return view.getUint32(0);
+	}
+	set lifetime(value) {
+		const view = this.set_attribute(0x000d, 4);
+		view.setUint32(0, value);
+		return true;
+	}
 }
 
 export class ChannelData extends Turn {

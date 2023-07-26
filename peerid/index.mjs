@@ -102,8 +102,8 @@ export class OwnPeerId extends PeerId {
 				fingerprints[algorithm] = value.split(':').reduce((a, v) => a + String.fromCharCode(parseInt(v, 16)), '');
 			}
 		}
-
-		// TODO: If we get all the fingerprints that we need from getFingerprints, then skip the dual temp connections?
+		
+		if (advanced_usage.id_fingerprint in fingerprints) return new this({fingerprints});
 
 		// We use a temporary connection to pull information from this cert:
 		const a = new RTCPeerConnection({ certificates: [cert] });
@@ -127,12 +127,6 @@ export class OwnPeerId extends PeerId {
 		// Wait for the datachannel to open:
 		await done;
 
-		// Pull the raw certificate chain from the RTCDtlsTransport (currently only works in Chrome):
-		let cert_chain = false;
-		if (typeof b?.sctp?.transport?.getRemoteCertificates == 'function') {
-			cert_chain = b.sctp.transport.getRemoteCertificates();
-		}
-
 		// Collect fingerprints from a.localDescription.sdp
 		let reg = /a=fingerprint:([\w\d-]+) ([\da-fA-F]{2}(?::[\da-fA-F]{2})*)/g;
 		let res;
@@ -143,6 +137,14 @@ export class OwnPeerId extends PeerId {
 				.split(':')
 				.map(s => parseInt(s, 16))
 				.reduce((a, v) => a + String.fromCharCode(v), '');
+		}
+
+		if (advanced_usage.id_fingerprint in fingerprints) return new this({fingerprints});
+
+		// Pull the raw certificate chain from the RTCDtlsTransport (currently only works in Chrome):
+		let cert_chain = false;
+		if (typeof b?.sctp?.transport?.getRemoteCertificates == 'function') {
+			cert_chain = b.sctp.transport.getRemoteCertificates();
 		}
 
 		// Collect fingerprints from subtle crypto using the raw cert chain:
@@ -158,6 +160,8 @@ export class OwnPeerId extends PeerId {
 		// Cleanup
 		a.close(); b.close();
 
-		return new this({fingerprints});
+		if (advanced_usage.id_fingerprint in fingerprints) return new this({fingerprints});
+
+		throw new Error("This browser is unable to get the id_fingerprint on a certificate.");
 	}
 }

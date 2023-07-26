@@ -1,4 +1,4 @@
-import { Turn, Stun, CredentialManager, ConnTestCM } from './turn.mjs';
+import { Turn, Stun, CredentialManager } from './turn.mjs';
 
 const listener = Deno.listenDatagram({ transport: 'udp', port: 4666 });
 
@@ -7,6 +7,7 @@ const cm = new CredentialManager();
 for await (const [packet, addr] of listener) {
 	const view = new DataView(packet.buffer, packet.byteOffset, packet.byteLength);
 	const turn = Turn.parse_packet(view);
+
 	const res = new Stun();
 	res.method = turn.method;
 	res.txid = turn.txid;
@@ -30,8 +31,11 @@ for await (const [packet, addr] of listener) {
 	else if (turn.class == 0 && turn.method == 3) {
 		res.class = 2;
 		res.username = turn.username;
-		res.nonce = 'nonce';
 		res.realm = 'realm';
+		res.nonce = 'nonce';
+		res.xrelay = addr;
+		res.xmapped = addr;
+		res.lifetime = 3600;
 		await res.auth(cm);
 	}
 	// Require authentication:
@@ -42,7 +46,7 @@ for await (const [packet, addr] of listener) {
 	// 	turn.realm = 'realm';
 	// 	turn.error = {code: 401};
 	// }
-	else { console.log('authenticated'); continue; }
+	else { continue; }
 
 	await listener.send(res.packet, addr);
 }
