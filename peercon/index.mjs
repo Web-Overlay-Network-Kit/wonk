@@ -80,6 +80,8 @@ export class PeerCon extends RTCPeerConnection {
 	}
 	#local_msg_res;
 	local_msg = new Promise(res => this.#local_msg_res = res);
+	#local_ice_cred_res;
+	local_ice_cred = new Promise(res => this.#local_ice_cred_res = res);
 
 	constructor({config = rtc_config, local_id = pid} = {}) {
 		super(config);
@@ -115,17 +117,21 @@ export class PeerCon extends RTCPeerConnection {
 		this.connected.catch(() => {}); // Don't leave the promise uncaught
 
 		await this.setLocalDescription();
-		await ice_complete;
-
+		
 		const { 1: ice_ufrag } = /a=ice-ufrag:(.+)/.exec(this.localDescription.sdp);
 		const { 1: ice_pwd } = /a=ice-pwd:(.+)/.exec(this.localDescription.sdp);
-		const l_msg = new SigMsg({
-			id: this.#local_id,
-			ice_candidates,
-			ice_ufrag,
-			ice_pwd
+		this.#local_ice_cred_res({ ice_ufrag, ice_pwd });
+
+		ice_complete.then(() => {
+			const l_msg = new SigMsg({
+				id: this.#local_id,
+				ice_candidates,
+				ice_ufrag,
+				ice_pwd
+			});
+			this.#local_msg_res(l_msg);
 		});
-		this.#local_msg_res(l_msg);
+
 
 		// Wait for the other peer's signalling message to reach us:
 		const r_msg = await this.remote_msg;
@@ -148,7 +154,7 @@ a=sctp-port:5000
 		sdp += this.peer_id.sdp();
 		await this.setRemoteDescription({ type: 'answer', sdp });
 		for (const candidate of r_msg.ice_candidates) {
-			this.addIceCandidate(candidate);
+			await this.addIceCandidate(candidate);
 		}
 
 		await this.connected;
@@ -156,7 +162,7 @@ a=sctp-port:5000
 		// Switch to using the Perfect negotiation pattern for future renegotiation:
 		// TODO:
 	}
-	static async connect_address(address, {
+	static connect_address(address, {
 		local_id = pid,
 		config = rtc_config,
 	} = {}) {
@@ -167,13 +173,15 @@ a=sctp-port:5000
 		temp_config.iceTransportPolicy = 'relay';
 
 		const conn = new this({ config: temp_config, local_id });
-		const local_msg = await conn.local_msg;
 
-		conn.remote_msg = new SigMsg({
-			id: local_id,
-			ice_ufrag: local_msg.ice_pwd,
-			ice_pwd: address.ice_pwd,
-			ice_candidates: gen_candidate()
+		// local_msg waits until ice gathering has completed, which can take a very long time.  We only really need the local ice_pwd which can be ready as soon as setLocalDescription has been called.
+		conn.local_ice_cred.then(({ice_pwd}) => {
+			conn.remote_msg = new SigMsg({
+				id: local_id,
+				ice_ufrag: ice_pwd,
+				ice_pwd: address.ice_pwd,
+				ice_candidates: gen_candidate()
+			});
 		});
 
 		// Once we're connected, then set the actual configuration and restart ICE:
