@@ -20,28 +20,26 @@ export const advanced_usage = {
 
 export class PeerId {
 	fingerprints; // associative array: fingerprint-name -> binstr
-	constructor() {
-		Object.assign(this, ...arguments);
+	constructor(arg) {
+		function decode(encoded) {
+			const fingerprints = Object.create(null);
+
+			const parts = decodeURIComponent(encoded).split('|');
+			if (parts.length < 1) throw new Error('Not a PeerId');
+
+			// TODO: Support multiple fingerprints?
+			const value = atob_url(parts.shift());
+			const alg = (parts.length > 0) ? parts.shift() : untagged.get(value.length);
+			if (!alg) throw new Error("Didn't recognize this untagged PeerId");
+			if (alg != advanced_usage.id_fingerprint) throw new Error("This PeerId didn't include the id_fingerprint.");
+			fingerprints[alg] = value;
+			return { fingerprints };
+		}
+		const {fingerprints} = (typeof arg == 'string') ? decode(arg) : arg;
+		this.fingerprints = fingerprints;
 		if (!(advanced_usage.id_fingerprint in this.fingerprints)) {
 			throw new Error("A PeerId must at least contain the id_fingerprint, because that hash is the one used as the peer's identifier.");
 		}
-	}
-
-	// Parse a PeerId
-	static from_string(encoded) {
-		const fingerprints = Object.create(null);
-
-		const parts = decodeURIComponent(encoded).split('|');
-		if (parts.length < 1) throw new Error('Not a PeerId');
-
-		// TODO: Support multiple fingerprints?
-		const value = atob_url(parts.shift());
-		const alg = (parts.length > 0) ? parts.shift() : untagged.get(value.length);
-		if (!alg) throw new Error("Didn't recognize this untagged PeerId");
-		if (alg != advanced_usage.id_fingerprint) throw new Error("This PeerId didn't include the id_fingerprint.");
-		fingerprints[alg] = value;
-
-		return new this({fingerprints});
 	}
 	// Return the sdp text for this PeerId:
 	sdp(fingerprints = [advanced_usage.id_fingerprint]) {

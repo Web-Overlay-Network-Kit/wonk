@@ -65,7 +65,7 @@ export class Address {
 		this.#b.password = token;
 	}
 	get peer_id() {
-		return PeerId.from_string(this.inner.username);
+		return new PeerId(this.inner.username);
 	}
 	set peer_id(peer_id) {
 		this.#a.username = String(peer_id);

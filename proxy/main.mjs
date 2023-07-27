@@ -1,6 +1,6 @@
 import { Turn, Stun, CredentialManager } from './turn.mjs';
 
-const listener = Deno.listenDatagram({ transport: 'udp', port: 4666 });
+const listener = Deno.listenDatagram({ transport: 'udp', port: 3478 });
 
 const cm = new CredentialManager();
 

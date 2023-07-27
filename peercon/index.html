@@ -15,19 +15,13 @@
 
 	window.Address = Address;
 
-	// const t = new Address({ peer_id: pid, host: 'local.evan-brass.net:443' });
-	// console.log(t);
-
-	// advanced_usage.id_fingerprint = 'sha-1';
-	// // console.log(pid);
-
-	const addr = new Address('udp:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio@local.evan-brass.net:4666');
+	const addr = new Address('udp:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio@local.evan-brass.net:3478');
 	console.log(String(addr));
-	// const addr = Address.from_string('OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio,local.evan-brass.net,u0d96');
-	// console.log(addr);
 
 	const conn = PeerCon.connect_address(addr);
 	console.log(conn);
+
+	await conn.connected;
 </script>
 <script type="_module">
 	import { OwnPeerId, PeerId, advanced_usage } from 'wonk-peerid';
@@ -52,10 +46,10 @@
 	const r = new PeerCon({config: peer_conf, local_id: peer_pid});
 	console.log('remote', r);
 
-	l.local_msg.then(msg => r.remote_msg = msg);
-	r.local_msg.then(msg => l.remote_msg = msg);
+	// Should work with either a string or an actual SigMsg
+	l.local_msg.then(m => r.remote_msg = String(m));
+	r.local_msg.then(m => l.remote_msg = m);
 
-	console.log(String(await l.local_msg), String(await r.local_msg));
-
-	// TODO: Pass the signalling message between the peers
+	l.connected.then(console.log, console.error);
+	r.connected.then(console.log, console.error);
 </script>

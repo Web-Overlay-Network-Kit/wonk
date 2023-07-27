@@ -42,14 +42,20 @@ export class SigMsg {
 	ice_ufrag;
 	ice_pwd;
 	ice_candidates;
-	constructor() { Object.assign(this, ...arguments); }
-	static from_string(s) {
-		let { 1: id, 2: ice_ufrag, 3: ice_pwd, 4: ice_candidates} = /([^.]+)\.([^.]+)\.([^.]+)\.(.+)/.exec(s);
-		id = PeerId.from_string(id);
-		ice_ufrag = ice_ufrag.replaceAll('-', '+').replaceAll('_', '/');
-		ice_pwd = ice_pwd.replaceAll('-', '+').replaceAll('_', '/');
-		ice_candidates = decode_candidates(decodeURIComponent(ice_candidates));
-		return new this({id, ice_ufrag, ice_pwd, ice_candidates});
+	constructor(arg) {
+		function decode(s) {
+			let { 1: id, 2: ice_ufrag, 3: ice_pwd, 4: ice_candidates} = /([^.]+)\.([^.]+)\.([^.]+)\.(.+)/.exec(s);
+			id = new PeerId(id);
+			ice_ufrag = ice_ufrag.replaceAll('-', '+').replaceAll('_', '/');
+			ice_pwd = ice_pwd.replaceAll('-', '+').replaceAll('_', '/');
+			ice_candidates = decode_candidates(decodeURIComponent(ice_candidates));
+			return { id, ice_ufrag, ice_pwd, ice_candidates };
+		}
+		const { id, ice_ufrag, ice_pwd, ice_candidates } = (typeof arg == 'string') ? decode(arg) : arg;
+		this.id = id;
+		this.ice_ufrag = ice_ufrag;
+		this.ice_pwd = ice_pwd;
+		this.ice_candidates = ice_candidates;
 	}
 	[Symbol.toPrimitive](_hint) {
 		console.log(this.ice_candidates);
@@ -73,6 +79,7 @@ export class PeerCon extends RTCPeerConnection {
 	#remote_msg_res;
 	#remote_msg = new Promise(res => this.#remote_msg_res = res);
 	set remote_msg(msg) {
+		if (!(msg instanceof SigMsg)) msg = new SigMsg(msg);
 		this.#remote_msg_res(msg);
 	}
 	get remote_msg() {
@@ -109,12 +116,19 @@ export class PeerCon extends RTCPeerConnection {
 			};
 			this.addEventListener('icecandidate', handler);
 		});
+
+		// TODO: Also take into consideration the RTCPeerConnection.connectionState
 		this.connected = new Promise((res, rej) => {
 			this.#dc.addEventListener('open', res, {once: true});
 			this.#dc.addEventListener('error', rej, {once: true});
 			this.#dc.addEventListener('closing', rej, {once: true});
+			this.addEventListener('connectionstatechange', e => {
+				if (this.connectionState == 'failed' || this.connectionState == 'closed') {
+					rej(e);
+				}
+			});
 		});
-		this.connected.catch(() => {}); // Don't leave the promise uncaught
+		this.connected.catch(() => { this.close(); });
 
 		await this.setLocalDescription();
 		
