@@ -173,15 +173,16 @@ export class Stun extends Turn {
 	}
 
 	get txid_buf() {
-		return new Uint8Array(this.view.buffer, 8, 12);
+		return new Uint8Array(this.view.buffer, this.view.byteOffset + 8, 12);
 	}
 	get txid() {
 		return this.txid_buf.reduce((a, v) => a + String.fromCharCode(v), '');
 	}
 	set txid(txid) {
-		new Uint8Array(this.view.buffer, 8, 12).set(
-			txid.split('').map(s => s.charCodeAt(0))
-		);
+		if (!(txid instanceof Uint8Array)) {
+			txid = txid.split('').map(s => s.charCodeAt(0))
+		}
+		this.txid_buf.set(txid);
 	}
 
 	constructor() {
@@ -225,22 +226,28 @@ export class Stun extends Turn {
 		this.remove_attribute(0x8028);
 		this.remove_attribute(0x0008);
 	}
-	async auth(credential_manager) {
+	async auth(credential_manager, username = undefined, realm = undefined) {
 		this.clear_auth();
 
-		const username = this.username;
-		const realm = this.realm;
-		if (!username) throw new Error('The username attribute must be set before authenticating a message.');
+		username ??= this.username;
+		realm ??= this.realm;
 
 		const key = await credential_manager.credential(username, realm);
-		if (!key) throw new Error("No key for this username.");
+		if (!key) throw new Error("Can't auth: No key.");
 
 		const view = this.add_attribute(0x0008, 20);
-		const length = view.byteOffset - 4 - this.view.byteOffset;
+		const length = view.byteOffset - this.view.byteOffset - 4;
 		const data = new Uint8Array(view.buffer, this.view.byteOffset, length);
 		const mac = await crypto.subtle.sign('HMAC', key, data);
 		new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
 			.set(new Uint8Array(mac));
+
+		{ // Add the fingerprint attribute as well:
+			const view = this.add_attribute(0x8028, 4);
+			const length = view.byteOffset - this.view.byteOffset - 4;
+			let f = crc32(new Uint8Array(this.view.buffer, this.view.byteOffset, length)) ^ 0x5354554e;
+			view.setInt32(0, f);
+		}
 	}
 	fingerprint() {
 		this.remove_attribute(0x8028);
@@ -259,7 +266,11 @@ export class Stun extends Turn {
 			const value = new DataView(this.view.buffer, this.view.byteOffset + i, length);
 
 			if (type == 0x8028) {
-				// TODO: check the fingerprint?
+				const length = value.byteOffset - this.view.byteOffset - 4;
+				const expected = crc32(new Uint8Array(this.view.buffer, this.view.byteOffset, length)) ^ 0x5354554e;
+				if (expected !== value.getInt32(0)) {
+					throw new Error("Fingerprint failed.");
+				}
 				break;
 			}
 
@@ -378,7 +389,7 @@ export class Stun extends Turn {
 		const view = this.attr.get(type);
 		if (!view) return;
 		const family = view.getUint8(1);
-		const port = view.getUint16(2);
+		let port = view.getUint16(2);
 		let addr_bytes = new Uint8Array(view.buffer, view.byteOffset + 4, view.byteLength - 4);
 		if (xor) {
 			port = port ^ 0x2112;
@@ -417,6 +428,46 @@ export class Stun extends Turn {
 			}
 			new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
 				.set(bytes);
+		}
+		return true;
+	}
+	get_u32_attr(type) {
+		const view = this.attr.get(type);
+		if (view?.byteLength !== 4) return;
+		return view.getUint32(0);
+	}
+	set_u32_attr(type, value) {
+		if (value === undefined || value === null) {
+			this.remove_attribute(type);
+		} else {
+			const view = this.set_attribute(type, 4);
+			view.setUint32(0, value);
+		}
+		return true;
+	}
+	get_u64_attr(type) {
+		const view = this.attr.get(type);
+		if (view?.byteLength !== 8) return;
+		return view.getBigUint64(0);
+	}
+	set_u64_attr(type, value) {
+		if (value === undefined || value === null) {
+			this.remove_attribute(type);
+		} else {
+			const view = this.set_attribute(type, 8);
+			view.setBigUint64(0, value);
+		}
+		return true;
+	}
+	get_bool_attr(type) {
+		if (this.attr.has(type)) return true;
+		return false;
+	}
+	set_bool_attr(type, value) {
+		if (value) {
+			this.set_attribute(type, 0);
+		} else {
+			this.remove_attribute(type);
 		}
 		return true;
 	}
@@ -500,14 +551,34 @@ export class Stun extends Turn {
 		return this.set_addr_attr(0x0016, value);
 	}
 	get lifetime() {
-		const view = this.attrs.get(0x000d);
-		if (view?.byteLength != 4) return;
-		return view.getUint32(0);
+		return this.get_u32_attr(0x000d);
 	}
 	set lifetime(value) {
-		const view = this.set_attribute(0x000d, 4);
-		view.setUint32(0, value);
-		return true;
+		return this.set_u32_attr(0x000d, value);
+	}
+	get priority() {
+		return this.get_u32_attr(0x0024);
+	}
+	set priority(value) {
+		return this.set_u32_attr(0x0024, value);
+	}
+	get use_candidate() {
+		return this.get_bool_attr(0x0025);
+	}
+	set use_candidate(value) {
+		return this.set_bool_attr(0x0025, value);
+	}
+	get controlled() {
+		return this.get_u64_attr(0x8029);
+	}
+	set controlled(value) {
+		return this.set_u64_attr(0x8029, value);
+	}
+	get controlling() {
+		return this.get_u64_attr(0x802A);
+	}
+	set controlling(value) {
+		return this.set_u64_attr(0x802A);
 	}
 }
 

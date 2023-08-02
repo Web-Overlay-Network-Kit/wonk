@@ -20,6 +20,48 @@ for await (const [packet, addr] of listener) {
 		res.mapped = addr;
 		res.xmapped = addr;
 	}
+	// TURN Send Indication
+	else if (turn.class == 1 && turn.method == 0x006) {
+		// console.log(turn.xpeer, turn.data);
+		const data = turn.data;
+		const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+		if (view.byteLength < 1) continue;
+
+		listener.send(new Uint8Array(view.buffer, view.byteOffset, view.byteLength), { hostname: "localhost", port: 4666 });
+
+		const first_byte = view.getUint8(0);
+		
+		// STUN:
+		if (first_byte < 4) {
+			const inner = Turn.parse_packet(view);
+			console.log('ct', inner);
+			if (inner.class == 0 && inner.method == 1 && await inner.check_auth(cm)) {
+				const ct_res = new Stun();
+				ct_res.class = 2;
+				ct_res.method = inner.method;
+				ct_res.txid = inner.txid;
+				ct_res.xmapped = addr;
+				// ct_res.username = inner.username;
+				await ct_res.auth(cm, inner.username);
+
+				listener.send(ct_res.packet, { hostname: "localhost", port: 6742 });
+	
+				// debugger;
+	
+				res.class = 1;
+				crypto.getRandomValues(res.txid_buf);
+				res.method = 0x007; // Data Indication
+				res.xpeer = turn.xpeer;
+				res.data = ct_res.packet;
+			} else {
+				continue;
+			}
+		}
+		//DTLS
+		else if (20 <= first_byte && first_byte < 64) {
+			// TODO: Froward the packet to the other side?
+		}
+	}
 	// Everything else requires authentication
 	else if (turn.class == 0 && !await turn.check_auth(cm)) {
 		res.class = 3;
