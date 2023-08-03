@@ -34,7 +34,7 @@ function decode_candidates(s) {
 function gen_candidate() {
 	// Give tasty treats to the US DoD:
 	const rand = crypto.getRandomValues(new Uint8Array(2 + 3));
-	return decode_candidates(`h${rand[0].toString(16)}${rand[1].toString(16)}30.${rand[2]}.${rand[3]}.${rand[4]}`);
+	return decode_candidates(`h${rand[0].toString(16).padStart(2, '0')}${rand[1].toString(16).padStart(2, '0')}30.${rand[2]}.${rand[3]}.${rand[4]}`);
 }
 
 export class SigMsg {

@@ -27,7 +27,7 @@ for await (const [packet, addr] of listener) {
 		const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
 		if (view.byteLength < 1) continue;
 
-		listener.send(new Uint8Array(view.buffer, view.byteOffset, view.byteLength), { hostname: "localhost", port: 4666 });
+		// listener.send(new Uint8Array(view.buffer, view.byteOffset, view.byteLength), { hostname: "localhost", port: 4666 });
 
 		const first_byte = view.getUint8(0);
 		
@@ -44,7 +44,7 @@ for await (const [packet, addr] of listener) {
 				// ct_res.username = inner.username;
 				await ct_res.auth(cm, inner.username);
 
-				listener.send(ct_res.packet, { hostname: "localhost", port: 6742 });
+				// listener.send(ct_res.packet, { hostname: "localhost", port: 6742 });
 	
 				// debugger;
 	
@@ -70,15 +70,26 @@ for await (const [packet, addr] of listener) {
 		res.realm = 'realm';
 	}
 	// TURN Allocate
-	else if (turn.class == 0 && turn.method == 3) {
+	else if (turn.class == 0 && turn.method == 0x003) {
 		res.class = 2;
-		res.username = turn.username;
-		res.realm = 'realm';
-		res.nonce = 'nonce';
+		// res.username = turn.username;
+		// res.realm = 'realm';
+		// res.nonce = 'nonce';
 		res.xrelay = addr; // TODO: If the transport is TCP, then we shouldn't use addr as the relayed address.
 		res.xmapped = addr;
 		res.lifetime = 3600;
-		await res.auth(cm);
+		await res.auth(cm, turn.username, turn.realm);
+	}
+	// TURN CreatePermission 
+	else if (turn.class == 0 && turn.method == 0x008) {
+		res.class = 2;
+		await res.auth(cm, turn.username, turn.realm);
+	}
+	// TURN Refresh
+	else if (turn.class == 0 && turn.method == 0x004) {
+		res.class = 2;
+		res.lifetime = turn.lifetime;
+		await res.auth(cm, turn.username, turn.realm);
 	}
 	// Require authentication:
 	// else if (!attr.has('username')) {
