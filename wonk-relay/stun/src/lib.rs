@@ -79,9 +79,9 @@ impl From<StunType> for u16 {
 
 #[derive(Debug, Clone)]
 pub struct Stun {
-	typ: StunType,
-	txid: [u8; 12],
-	attrs: Vec<StunAttr>
+	pub typ: StunType,
+	pub txid: [u8; 12],
+	pub attrs: Vec<StunAttr>
 }
 impl Stun {
 	pub fn has_auth(&self) {

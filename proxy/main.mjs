@@ -4,6 +4,17 @@ const listener = Deno.listenDatagram({ transport: 'udp', port: 3478 });
 
 const cm = new CredentialManager();
 
+const usernames = new Map(); // addr(hostname+port+transport) -> username
+const assocs = new Map(); // username -> { hostname, transport, port }
+
+function addr2s(addr) {
+	return `${addr.hostname}+${addr.port}+${addr.transport}}`;
+}
+function swizzle(username) {
+	const [dest, src, token] = username.split('.');
+	return `${src}.${dest}.${token}`;
+}
+
 for await (const [packet, addr] of listener) {
 	const view = new DataView(packet.buffer, packet.byteOffset, packet.byteLength);
 	const turn = Turn.parse_packet(view);
@@ -30,11 +41,15 @@ for await (const [packet, addr] of listener) {
 		// listener.send(new Uint8Array(view.buffer, view.byteOffset, view.byteLength), { hostname: "localhost", port: 4666 });
 
 		const first_byte = view.getUint8(0);
+
+		const username = usernames.get(addr2s(addr));
+		if (!username) continue;
+		const assoc = assocs.get(swizzle(username));
 		
 		// STUN:
 		if (first_byte < 4) {
 			const inner = Turn.parse_packet(view);
-			console.log('ct', inner);
+			// console.log('ct', inner);
 			if (inner.class == 0 && inner.method == 1 && await inner.check_auth(cm)) {
 				const ct_res = new Stun();
 				ct_res.class = 2;
@@ -59,7 +74,17 @@ for await (const [packet, addr] of listener) {
 		}
 		//DTLS
 		else if (20 <= first_byte && first_byte < 64) {
-			// TODO: Froward the packet to the other side?
+			if (!assoc) {
+				console.log('new incoming:', username, addr);
+				continue;
+			}
+			res.class = 1;
+			res.method = 0x007;
+			res.xpeer = addr;
+			res.data = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+
+			await listener.send(res.packet, assoc);
+			continue;
 		}
 	}
 	// Everything else requires authentication
@@ -79,6 +104,9 @@ for await (const [packet, addr] of listener) {
 		res.xmapped = addr;
 		res.lifetime = 3600;
 		await res.auth(cm, turn.username, turn.realm);
+
+		usernames.set(addr2s(addr), turn.username);
+		assocs.set(turn.username, addr);
 	}
 	// TURN CreatePermission 
 	else if (turn.class == 0 && turn.method == 0x008) {
