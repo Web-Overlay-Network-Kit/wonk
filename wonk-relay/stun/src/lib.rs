@@ -1,11 +1,12 @@
 #![allow(dead_code)]
-use std::{collections::HashSet, mem::MaybeUninit};
-use std::borrow::Cow;
+use std::collections::HashSet;
 
 use eyre::{Result, eyre};
 
 pub mod attr;
 use attr::StunAttr;
+
+mod mbedtls_util;
 
 pub enum StunAuth<'i> {
 	NoAuth,
@@ -179,43 +180,28 @@ impl Stun {
 				}
 			};
 
-			let mut out = [0u8; 16];
+			let turn_auth;
 			let key_data = match realm {
 				Some(realm) => {
-					let mut ctx = MaybeUninit::uninit();
-					unsafe { mbedtls::mbedtls_md5_init(ctx.as_mut_ptr()); }
-					let mut ctx = unsafe { ctx.assume_init() };
-					if unsafe { mbedtls::mbedtls_md5_starts(&mut ctx) } != 0 { panic!(); }
-					if unsafe { mbedtls::mbedtls_md5_update(&mut ctx, username.as_ptr(), username.len()) } != 0 { panic!(); }
-					if unsafe { mbedtls::mbedtls_md5_update(&mut ctx, ":".as_ptr(), 1) } != 0 { panic!(); }
-					if unsafe { mbedtls::mbedtls_md5_update(&mut ctx, realm.as_ptr(), realm.len()) } != 0 { panic!(); }
-					if unsafe { mbedtls::mbedtls_md5_update(&mut ctx, ":".as_ptr(), 1) } != 0 { panic!(); }
-					if unsafe { mbedtls::mbedtls_md5_update(&mut ctx, password.as_ptr(), password.len()) } != 0 { panic!(); }
-					if unsafe { mbedtls::mbedtls_md5_finish(&mut ctx, out.as_mut_ptr()) } != 0 { panic!(); }
-					unsafe { mbedtls::mbedtls_md5_free(&mut ctx); }
-					&out
+					turn_auth = mbedtls_util::md5(&[
+						username.as_bytes(),
+						":".as_bytes(),
+						realm.as_bytes(),
+						":".as_bytes(),
+						password.as_bytes()
+					]);
+					&turn_auth
 				},
 				None => password.as_bytes()
 			};
 
-			let mut ctx = MaybeUninit::uninit();
-			unsafe { mbedtls::mbedtls_md_init(ctx.as_mut_ptr()); }
-			let mut ctx = unsafe { ctx.assume_init() };
-			let md_info = unsafe { mbedtls::mbedtls_md_info_from_type(mbedtls::mbedtls_md_type_t_MBEDTLS_MD_SHA1) };
-			if unsafe { mbedtls::mbedtls_md_setup(&mut ctx, md_info, 1) } != 0 { panic!(); }
-			if unsafe { mbedtls::mbedtls_md_hmac_starts(&mut ctx, key_data.as_ptr(), key_data.len()) } != 0 { panic!(); }
-			let chunk1 = &buffer[..2];
-			let chunk2 = length.to_be_bytes();
-			let chunk3 = &buffer[4..][..(20 - 4) + length as usize - 4 - 20];
-			if unsafe { mbedtls::mbedtls_md_hmac_update(&mut ctx, chunk1.as_ptr(), chunk1.len()) } != 0 { panic!(); }
-			if unsafe { mbedtls::mbedtls_md_hmac_update(&mut ctx, chunk2.as_ptr(), chunk2.len()) } != 0 { panic!(); }
-			if unsafe { mbedtls::mbedtls_md_hmac_update(&mut ctx, chunk3.as_ptr(), chunk3.len()) } != 0 { panic!(); }
-			
-			let mut out = [0u8; 20];
-			if unsafe { mbedtls::mbedtls_md_hmac_finish(&mut ctx, out.as_mut_ptr()) } != 0 { panic!(); }
-			unsafe { mbedtls::mbedtls_md_free(&mut ctx); }
+			let expected = mbedtls_util::sha1_hmac(key_data, &[
+				&buffer[..2],
+				&length.to_be_bytes(),
+				&buffer[4..][..(20 - 4) + length as usize - 4 - 20]
+			]);
 
-			if out != i {
+			if expected != i {
 				return Err(eyre!("Integrity Check failed."));
 			}
 		}
