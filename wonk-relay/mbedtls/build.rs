@@ -29,6 +29,7 @@ fn main() -> Result<()> {
 			r#"-DMBEDTLS_CONFIG="config.h""#
 		])
 		.parse_callbacks(Box::new(bindgen::CargoCallbacks))
+		.constified_enum("mbedtls_md_type_t")
 		.generate()?;
 	bindings.write_to_file("src/bindings.rs")?;
 

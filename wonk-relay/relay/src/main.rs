@@ -16,20 +16,27 @@ fn main() -> Result<()> {
 				continue;
 			}
 		};
-		println!("{addr} {msg:#?}");
+		// println!("{addr} {msg:#?}");
 
 		match msg.typ {
 			// STUN Binding Req
 			StunType::Req(0x001) => {
 
 			}
-			// TURN Allocate Req (NoAuth)
-			StunType::Req(0x003) if !msg.attrs.contains()=> {
-
-			}
 			// TURN Allocate Req (Auth)
 			StunType::Req(0x003) => {
-				
+				let response = Stun {
+					typ: StunType::Err(0x003),
+					txid: msg.txid,
+					attrs: vec![
+						StunAttr::Error { code: 401, message: String::new() },
+						StunAttr::Nonce("nonce".into()),
+						StunAttr::Realm("realm".into())
+					]
+				};
+				let mut buff = Vec::new();
+				response.encode(&mut buff);
+				sock.send_to(&buff, addr)?;
 			}
 			_ => {}
 		}

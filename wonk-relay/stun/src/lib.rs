@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use std::collections::HashSet;
+use std::{collections::HashSet, mem::MaybeUninit};
 use std::borrow::Cow;
 
 use eyre::{Result, eyre};
@@ -117,7 +117,7 @@ impl Stun {
 			let attr_len = u16::from_be_bytes(buffer[offset + 2..][..2].try_into().unwrap());
 			i += 4;
 
-			println!("{typ} {attr_len}");
+			// println!("{typ} {attr_len}");
 
 			let max_len = length - i;
 			if attr_len > max_len { return Err(eyre!("Attribute length ({attr_len}) is longer than the remaining STUN length ({max_len}).")); }
@@ -125,8 +125,6 @@ impl Stun {
 			i += attr_len;
 
 			let val = &buffer[offset + 4..][..attr_len as usize];
-
-			// TODO: Give special handling for Fingerprint and Integrity
 
 			let attr = StunAttr::parse(typ, val, xor_bytes)?;
 			while i % 4 != 0 { i += 1; }
@@ -162,7 +160,7 @@ impl Stun {
 		}
 
 		// Check the integrity
-		if let Some((_i, _length)) = integrity {
+		if let Some((i, length)) = integrity {
 			let (username, realm, password) = match auth {
 				StunAuth::NoAuth => return Err(eyre!("STUN auth failure: packed included an integrity, but auth was NoAuth.")),
 				StunAuth::Static { username, realm, password } => (username, realm, password),
@@ -180,14 +178,46 @@ impl Stun {
 					(username, realm, password)
 				}
 			};
+
+			let mut out = [0u8; 16];
 			let key_data = match realm {
-				Some(realm) => Cow::Owned(format!("{username}:{realm}:{password}")),
-				None => Cow::Borrowed(password)
+				Some(realm) => {
+					let mut ctx = MaybeUninit::uninit();
+					unsafe { mbedtls::mbedtls_md5_init(ctx.as_mut_ptr()); }
+					let mut ctx = unsafe { ctx.assume_init() };
+					if unsafe { mbedtls::mbedtls_md5_starts(&mut ctx) } != 0 { panic!(); }
+					if unsafe { mbedtls::mbedtls_md5_update(&mut ctx, username.as_ptr(), username.len()) } != 0 { panic!(); }
+					if unsafe { mbedtls::mbedtls_md5_update(&mut ctx, ":".as_ptr(), 1) } != 0 { panic!(); }
+					if unsafe { mbedtls::mbedtls_md5_update(&mut ctx, realm.as_ptr(), realm.len()) } != 0 { panic!(); }
+					if unsafe { mbedtls::mbedtls_md5_update(&mut ctx, ":".as_ptr(), 1) } != 0 { panic!(); }
+					if unsafe { mbedtls::mbedtls_md5_update(&mut ctx, password.as_ptr(), password.len()) } != 0 { panic!(); }
+					if unsafe { mbedtls::mbedtls_md5_finish(&mut ctx, out.as_mut_ptr()) } != 0 { panic!(); }
+					unsafe { mbedtls::mbedtls_md5_free(&mut ctx); }
+					&out
+				},
+				None => password.as_bytes()
 			};
 
-			println!("{length} {i:?} {key_data}");
+			let mut ctx = MaybeUninit::uninit();
+			unsafe { mbedtls::mbedtls_md_init(ctx.as_mut_ptr()); }
+			let mut ctx = unsafe { ctx.assume_init() };
+			let md_info = unsafe { mbedtls::mbedtls_md_info_from_type(mbedtls::mbedtls_md_type_t_MBEDTLS_MD_SHA1) };
+			if unsafe { mbedtls::mbedtls_md_setup(&mut ctx, md_info, 1) } != 0 { panic!(); }
+			if unsafe { mbedtls::mbedtls_md_hmac_starts(&mut ctx, key_data.as_ptr(), key_data.len()) } != 0 { panic!(); }
+			let chunk1 = &buffer[..2];
+			let chunk2 = length.to_be_bytes();
+			let chunk3 = &buffer[4..][..(20 - 4) + length as usize - 4 - 20];
+			if unsafe { mbedtls::mbedtls_md_hmac_update(&mut ctx, chunk1.as_ptr(), chunk1.len()) } != 0 { panic!(); }
+			if unsafe { mbedtls::mbedtls_md_hmac_update(&mut ctx, chunk2.as_ptr(), chunk2.len()) } != 0 { panic!(); }
+			if unsafe { mbedtls::mbedtls_md_hmac_update(&mut ctx, chunk3.as_ptr(), chunk3.len()) } != 0 { panic!(); }
+			
+			let mut out = [0u8; 20];
+			if unsafe { mbedtls::mbedtls_md_hmac_finish(&mut ctx, out.as_mut_ptr()) } != 0 { panic!(); }
+			unsafe { mbedtls::mbedtls_md_free(&mut ctx); }
 
-			// TODO: Make a SHA-1 HMAC key, mac the message, compare the result to the included integrity
+			if out != i {
+				return Err(eyre!("Integrity Check failed."));
+			}
 		}
 
 		Ok(Self {
@@ -200,6 +230,7 @@ impl Stun {
 	pub fn encode(&self, buff: &mut Vec<u8>) {
 		let mut length = 0;
 		for attr in &self.attrs {
+			length += 4;
 			length += attr.length();
 			while length % 4 != 0 { length += 1; }
 		}
