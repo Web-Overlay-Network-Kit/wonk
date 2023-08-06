@@ -1,6 +1,6 @@
 use stun::{Stun, StunAuth, StunType, attr::StunAttr};
 use eyre::Result;
-use std::net::UdpSocket;
+use std::{net::UdpSocket, borrow::Cow};
 
 fn main() -> Result<()> {
 	let sock = UdpSocket::bind("[::]:3478")?;
@@ -25,14 +25,15 @@ fn main() -> Result<()> {
 			}
 			// TURN Allocate Req (Auth)
 			StunType::Req(0x003) => {
+				let attrs = [
+					StunAttr::Error { code: 401, message: String::new() },
+					StunAttr::Nonce("nonce".into()),
+					StunAttr::Realm("realm".into())
+				];
 				let response = Stun {
 					typ: StunType::Err(0x003),
 					txid: msg.txid,
-					attrs: vec![
-						StunAttr::Error { code: 401, message: String::new() },
-						StunAttr::Nonce("nonce".into()),
-						StunAttr::Realm("realm".into())
-					]
+					attrs: Cow::Borrowed(&attrs)
 				};
 				let mut buff = Vec::new();
 				response.encode(&mut buff);

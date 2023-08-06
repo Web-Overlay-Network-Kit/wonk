@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use std::collections::HashSet;
+use std::borrow::Cow;
 
 use eyre::{Result, eyre};
 
@@ -79,19 +80,19 @@ impl From<StunType> for u16 {
 }
 
 #[derive(Debug, Clone)]
-pub struct Stun {
+pub struct Stun<'i> {
 	pub typ: StunType,
-	pub txid: [u8; 12],
-	pub attrs: Vec<StunAttr>
+	pub txid: Cow<'i, [u8; 12]>,
+	pub attrs: Cow<'i, [StunAttr]>
 }
-impl Stun {
+impl<'i> Stun<'i> {
 	pub fn has_auth(&self) {
 		
 	}
 }
 
-impl Stun {
-	pub fn parse_auth(buffer: &[u8], auth: StunAuth<'_>) -> Result<Self> {
+impl<'i> Stun<'i> {
+	pub fn parse_auth(buffer: &'i [u8], auth: StunAuth<'_>) -> Result<Self> {
 		if buffer.len() < 20 { return Err(eyre!("Packet length ({}) is too short to be a STUN packet.", buffer.len())); }
 		let typ = u16::from_be_bytes(buffer[0..][..2].try_into().unwrap());
 		let typ = StunType::try_from(typ)?;
@@ -103,7 +104,7 @@ impl Stun {
 		let magic = u32::from_be_bytes(buffer[4..][..4].try_into().unwrap());
 		if magic != 0x2112A442 { return Err(eyre!("Wrong STUN magic value (${magic:x}).")); }
 
-		let txid = buffer[8..][..12].try_into().unwrap();
+		let txid = Cow::Borrowed(buffer[8..][..12].try_into().unwrap());
 		let xor_bytes = &buffer[4..][..16];
 
 		let mut integrity = None;
@@ -207,15 +208,15 @@ impl Stun {
 		}
 
 		Ok(Self {
-			typ, txid, attrs
+			typ, txid, attrs: Cow::Owned(attrs)
 		})
 	}
-	pub fn parse(buffer: &[u8]) -> Result<Self> {
+	pub fn parse(buffer: &'i[u8]) -> Result<Self> {
 		Self::parse_auth(buffer, StunAuth::NoAuth)
 	}
 	pub fn encode(&self, buff: &mut Vec<u8>) {
 		let mut length = 0;
-		for attr in &self.attrs {
+		for attr in self.attrs.iter() {
 			length += 4;
 			length += attr.length();
 			while length % 4 != 0 { length += 1; }
@@ -225,13 +226,13 @@ impl Stun {
 		buff.extend_from_slice(&u16::from(self.typ).to_be_bytes());
 		buff.extend_from_slice(&length.to_be_bytes());
 		buff.extend_from_slice(&0x2112A442u32.to_be_bytes());
-		buff.extend_from_slice(&self.txid);
+		buff.extend_from_slice(self.txid.as_ref());
 
 		let mut xor_bytes = [0u8; 16];
 		xor_bytes[..4].copy_from_slice(&0x2112A442u32.to_be_bytes());
-		xor_bytes[4..].copy_from_slice(&self.txid);
+		xor_bytes[4..].copy_from_slice(self.txid.as_ref());
 
-		for attr in &self.attrs {
+		for attr in self.attrs.iter() {
 			attr.encode(buff, &xor_bytes)
 		}
 	}
