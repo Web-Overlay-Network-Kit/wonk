@@ -3,14 +3,20 @@ import { PeerId, b64url } from 'wonk-peerid';
 
 /**
  * === Examples (Aspirational, not working yet) ===
- * udp:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio@local.evan-brass.net:4666
+ * relayu:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio@local.evan-brass.net:4666
  * - Connect via a proxy (turn:local.evan-brass.net:4666?transport=udp)
  * - Connect to peer OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio
  * - Randomly generate a token for the connection (Not answering an existing connection)
  * 
- * tls:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio:MJfyvbCdukmQpaow-vAqXg@local.evan-brass.net
+ * relayl:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio:MJfyvbCdukmQpaow-vAqXg@local.evan-brass.net
  * - Answer a connection from OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio (identified via token MJfyvbCdukmQpaow-vAqXg)
  * - Connect via a proxy (turns:local.evan-brass.net:443)
+ * 
+ * TODO:
+ * udp:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio:this/is/ice/password@node.evan-brass.net
+ * - Server is ICE light (no proxy)
+ *   - ICE ufrag: OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio (same as peerid)
+ *   - ICE pwd: this/is/ice/password (if not set, then the/ice/password/constant)
  * 
  * web3:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio/p2p-chat
  * - Connect via auto discovery
@@ -23,27 +29,27 @@ export function gen_token(len = 16) {
 }
 
 const proto_turn = {
-	tcp: 'turn',
-	tls: 'turns',
-	udp: 'turn'
+	relayt: 'turn',
+	relayl: 'turns',
+	relayu: 'turn'
 };
 const proto_search = {
-	tcp: '',
-	tls: '',
-	udp: '?transport=udp'
+	relayt: '',
+	relayl: '',
+	relayu: '?transport=udp'
 };
 const proto_ports = {
-	tcp: 80,
-	tls: 443,
-	udp: 3478
+	relayt: 80,
+	relayl: 443,
+	relayu: 3478
 };
 
 
 export class Address {
 	#a;
 	#b;
-	protocol = 'tls';
-	constructor(s = 'tls:localhost') {
+	protocol = 'relayl';
+	constructor(s = 'relayl:localhost') {
 		this.#a = new URL(s);
 		this.#b = new URL(s);
 
