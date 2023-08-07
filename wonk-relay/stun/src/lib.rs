@@ -85,11 +85,6 @@ pub struct Stun<'i> {
 	pub txid: Cow<'i, [u8; 12]>,
 	pub attrs: Cow<'i, [StunAttr<'i>]> // TODO: Replace this with &'i dyn Iterator<StunAttr<'i>> so that it could either be a Vec<StunAttr> or a StunAttrParser
 }
-impl<'i> Stun<'i> {
-	pub fn has_auth(&self) {
-		
-	}
-}
 
 impl<'i> Stun<'i> {
 	pub fn decode(buffer: &'i [u8], auth: StunAuth<'_>) -> Result<Self> {
@@ -140,8 +135,8 @@ impl<'i> Stun<'i> {
 						attrs.push(attr);
 					}
 					_ if integrity.is_some() => {} // The only attribute that can come after integrity is the fingerprint
-					StunAttr::Integrity(buff) => {
-						integrity = Some((buff, i));
+					StunAttr::Integrity(ref buff) => {
+						integrity = Some((buff.clone(), i));
 						attrs.push(attr);
 					}
 					_ => attrs.push(attr),
@@ -202,7 +197,7 @@ impl<'i> Stun<'i> {
 				&buffer[4..][..(20 - 4) + length as usize - 4 - 20]
 			]);
 
-			if expected != i {
+			if &expected != i.as_ref() {
 				return Err(eyre!("Integrity Check failed."));
 			}
 		}
@@ -215,7 +210,7 @@ impl<'i> Stun<'i> {
 		let mut length = 0;
 		for attr in self.attrs.iter() {
 			length += 4;
-			length += attr.length();
+			length += attr.len();
 			while length % 4 != 0 { length += 1; }
 		}
 		buff.reserve(20 + length as usize);

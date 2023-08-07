@@ -30,13 +30,42 @@ impl<'i> TryFrom<&'i [u8]> for UnknownAttributes<'i> {
 		Ok(UnknownAttributes::Parse(value))
 	}
 }
+impl<'i> IntoIterator for &'i UnknownAttributes<'i> {
+	type Item = u16;
+	type IntoIter = UnknownAttributesIter<'i>;
+	fn into_iter(self) -> Self::IntoIter {
+		match self {
+			UnknownAttributes::Parse(s) => UnknownAttributesIter::Parse(s),
+			UnknownAttributes::List(l) => UnknownAttributesIter::List(l.into_iter())
+		}
+	}
+}
+
+pub enum UnknownAttributesIter<'i> {
+	Parse(&'i [u8]),
+	List(std::slice::Iter<'i, u16>)
+}
+impl<'a> Iterator for UnknownAttributesIter<'a> {
+	type Item = u16;
+	fn next(&mut self) -> Option<Self::Item> {
+		match self {
+			Self::Parse(s) => {
+				if s.len() < 2 { return None; }
+				let ret = u16::from_be_bytes(s[..2].try_into().unwrap());
+				*s = &s[2..];
+				Some(ret)
+			},
+			Self::List(i) => i.next().cloned()
+		}
+	}
+}
 
 #[derive(Debug, Clone)]
 pub enum StunAttr<'i> {
 	// RFC 5389:
 	/* 0x0001 */ Mapped(SocketAddr),
 	/* 0x0006 */ Username(Cow<'i, str>),
-	/* 0x0008 */ Integrity([u8; 20]),
+	/* 0x0008 */ Integrity(Cow<'i, [u8; 20]>),
 	/* 0x0009 */ Error { code: u16, message: Cow<'i, str> },
 	/* 0x000A */ UnknownAttributes(UnknownAttributes<'i>),
 	/* 0x0014 */ Realm(Cow<'i, str>),
@@ -141,7 +170,7 @@ impl<'i> StunAttr<'i> {
 			Self::Other(typ, _) => *typ
 		}
 	}
-	pub fn length(&self) -> u16 {
+	pub fn len(&self) -> u16 {
 		match self {
 			Self::Mapped(s) | Self::XMapped(s) |
 			Self::AlternateServer(s) | Self::XPeer(s) |
@@ -168,7 +197,7 @@ impl<'i> StunAttr<'i> {
 		Ok(match typ {
 			0x0001 => Self::Mapped(stun_addr_attr(data, None)?),
 			0x0006 => Self::Username(std::str::from_utf8(data)?.into()),
-			0x0008 => Self::Integrity(data.try_into()?),
+			0x0008 => Self::Integrity(Cow::Borrowed(<&[u8; 20]>::try_from(data)?)),
 			0x0009 => {
 				if data.len() < 4 { return Err(eyre!("Error attribute not long enough.")) }
 				let code = 100 * data[2] as u16 + data[3] as u16;
@@ -205,7 +234,7 @@ impl<'i> StunAttr<'i> {
 		// TODO: I can't use xor_bytes, because it would be an immutable borrow of buff which is also borrowed mutably.
 		
 		buff.extend_from_slice(&self.typ().to_be_bytes());
-		buff.extend_from_slice(&self.length().to_be_bytes());
+		buff.extend_from_slice(&self.len().to_be_bytes());
 
 		match self {
 			Self::Mapped(s) | Self::AlternateServer(s) => encode_addr_attr(s, buff, None),
@@ -214,7 +243,7 @@ impl<'i> StunAttr<'i> {
 			Self::Nonce(s) | Self::Software(s) => {
 				buff.extend_from_slice(s.as_bytes());
 			},
-			Self::Integrity(v) => buff.extend_from_slice(v),
+			Self::Integrity(v) => buff.extend_from_slice(v.as_ref()),
 			Self::Error{code, message} => {
 				buff.push(0);
 				buff.push(0);
