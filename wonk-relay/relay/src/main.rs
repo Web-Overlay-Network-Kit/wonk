@@ -9,7 +9,7 @@ fn main() -> Result<()> {
 	loop {
 		let Ok((len, addr)) = sock.recv_from(&mut buff) else { continue; };
 		let packet = &buff[..len];
-		let msg = match Stun::parse_auth(packet, StunAuth::Get(&|_, _| Some("the/turn/password/constant"))) {
+		let msg = match Stun::decode(packet, StunAuth::Get(&|_, _| Some("the/turn/password/constant"))) {
 			Ok(m) => m,
 			Err(e) => {
 				eprintln!("Error: {e}");
@@ -26,7 +26,7 @@ fn main() -> Result<()> {
 			// TURN Allocate Req (Auth)
 			StunType::Req(0x003) => {
 				let attrs = [
-					StunAttr::Error { code: 401, message: String::new() },
+					StunAttr::Error { code: 401, message: "".into() },
 					StunAttr::Nonce("nonce".into()),
 					StunAttr::Realm("realm".into())
 				];

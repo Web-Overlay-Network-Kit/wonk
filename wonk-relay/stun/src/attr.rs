@@ -1,18 +1,48 @@
-use eyre::{Result, eyre};
+use eyre::{Result, eyre, Report};
 use std::net::{SocketAddr, IpAddr};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone)]
-pub enum StunAttr {
+pub enum UnknownAttributes<'i> {
+	Parse(&'i [u8]),
+	List(Cow<'i, [u16]>)
+}
+impl<'i> UnknownAttributes<'i> {
+	pub fn len(&self) -> u16 {
+		match self {
+			Self::Parse(s) => s.len() as u16,
+			Self::List(l) => (l.len() * 2) as u16
+		}
+	}
+	pub fn encode(&self, buff: &mut Vec<u8>) {
+		match self {
+			Self::Parse(s) => buff.extend_from_slice(s),
+			Self::List(l) => for t in l.as_ref() {
+				buff.extend_from_slice(&t.to_be_bytes())
+			}
+		}
+	}
+}
+impl<'i> TryFrom<&'i [u8]> for UnknownAttributes<'i> {
+	type Error = Report;
+	fn try_from(value: &'i [u8]) -> Result<Self> {
+		if value.len() % 2 != 0 { return Err(eyre!("UnknownAttributes slice not 2-byte aligned.")); }
+		Ok(UnknownAttributes::Parse(value))
+	}
+}
+
+#[derive(Debug, Clone)]
+pub enum StunAttr<'i> {
 	// RFC 5389:
 	/* 0x0001 */ Mapped(SocketAddr),
-	/* 0x0006 */ Username(String),
+	/* 0x0006 */ Username(Cow<'i, str>),
 	/* 0x0008 */ Integrity([u8; 20]),
-	/* 0x0009 */ Error { code: u16, message: String },
-	/* 0x000A */ UnknownAttributes(Vec<u16>),
-	/* 0x0014 */ Realm(String),
-	/* 0x0015 */ Nonce(String),
+	/* 0x0009 */ Error { code: u16, message: Cow<'i, str> },
+	/* 0x000A */ UnknownAttributes(UnknownAttributes<'i>),
+	/* 0x0014 */ Realm(Cow<'i, str>),
+	/* 0x0015 */ Nonce(Cow<'i, str>),
 	/* 0x0020 */ XMapped(SocketAddr),
-	/* 0x8022 */ Software(String),
+	/* 0x8022 */ Software(Cow<'i, str>),
 	/* 0x8023 */ AlternateServer(SocketAddr),
 	/* 0x8028 */ Fingerprint(u32),
 
@@ -20,7 +50,7 @@ pub enum StunAttr {
 	/* 0x000C */ Channel(u32),
 	/* 0x000D */ Lifetime(u32),
 	/* 0x0012 */ XPeer(SocketAddr),
-	/* 0x0013 */ Data(Vec<u8>),
+	/* 0x0013 */ Data(Cow< 'i,[u8]>),
 	/* 0x0016 */ XRelayed(SocketAddr),
 	/* 0x0018 */ EvenPort(bool),
 	/* 0x0019 */ RequestedTransport(u8),
@@ -33,7 +63,7 @@ pub enum StunAttr {
 	/* 0x8029 */ IceControlled(u64),
 	/* 0x802A */ IceControlling(u64),
 
-	Other(u16, Vec<u8>)
+	Other(u16, Cow<'i, [u8]>)
 }
 
 fn stun_addr_attr(data: &[u8], xor_bytes: Option<&[u8]>) -> Result<SocketAddr> {
@@ -77,7 +107,8 @@ fn encode_addr_attr(addr: &SocketAddr, buff: &mut Vec<u8>, xor_bytes: Option<&[u
 	}
 }
 
-impl StunAttr {
+
+impl<'i> StunAttr<'i> {
 	pub fn typ(&self) -> u16 {
 		match self {
 			Self::Mapped(_) => 0x0001,
@@ -122,7 +153,7 @@ impl StunAttr {
 			Self::Nonce(s) | Self::Software(s) => s.len() as u16,
 			Self::Integrity(_) => 20,
 			Self::Error{message, ..} => 4 + message.len() as u16,
-			Self::UnknownAttributes(v) => (v.len() * 2) as u16,
+			Self::UnknownAttributes(ua) => ua.len(),
 			Self::Fingerprint(_) | Self::Channel(_) | Self::Lifetime(_) |
 			Self::ReservationToken(_) | Self::Priority(_) => 4,
 			Self::Data(v) => v.len() as u16,
@@ -133,7 +164,7 @@ impl StunAttr {
 			Self::Other(_, v) => v.len() as u16
 		}
 	}
-	pub fn parse(typ: u16, data: &[u8], xor_bytes: &[u8]) -> Result<Self> {
+	pub fn parse(typ: u16, data: &'i[u8], xor_bytes: &'_[u8]) -> Result<Self> {
 		Ok(match typ {
 			0x0001 => Self::Mapped(stun_addr_attr(data, None)?),
 			0x0006 => Self::Username(std::str::from_utf8(data)?.into()),
@@ -141,12 +172,10 @@ impl StunAttr {
 			0x0009 => {
 				if data.len() < 4 { return Err(eyre!("Error attribute not long enough.")) }
 				let code = 100 * data[2] as u16 + data[3] as u16;
-				let message = std::str::from_utf8(&data[4..])?.to_owned();
+				let message = std::str::from_utf8(&data[4..])?.into();
 				Self::Error { code, message }
 			},
-			0x000A => Self::UnknownAttributes(data.chunks(2).map(|c| u16::from_be_bytes(
-				TryFrom::try_from(c).unwrap()
-			)).collect()),
+			0x000A => Self::UnknownAttributes(data.try_into()?),
 			0x0014 => Self::Realm(std::str::from_utf8(data)?.into()),
 			0x0015 => Self::Nonce(std::str::from_utf8(data)?.into()),
 			0x0020 => Self::XMapped(stun_addr_attr(data, Some(xor_bytes))?),
@@ -169,7 +198,7 @@ impl StunAttr {
 			0x8029 => Self::IceControlled(u64::from_be_bytes(data.try_into()?)),
 			0x802A => Self::IceControlling(u64::from_be_bytes(data.try_into()?)),
 
-			_ => Self::Other(typ, data.to_owned())
+			_ => Self::Other(typ, data.into())
 		})
 	}
 	pub fn encode(&self, buff: &mut Vec<u8>, xor_bytes: &[u8]) {
@@ -193,9 +222,7 @@ impl StunAttr {
 				buff.push((code % 100) as u8);
 				buff.extend_from_slice(message.as_bytes());
 			},
-			Self::UnknownAttributes(v) => for typ in v {
-				buff.extend_from_slice(&typ.to_be_bytes());
-			},
+			Self::UnknownAttributes(ua) => ua.encode(buff),
 			Self::Fingerprint(v) | Self::Channel(v) | Self::Lifetime(v) |
 			Self::ReservationToken(v) | Self::Priority(v) => buff.extend_from_slice(&v.to_be_bytes()),
 			Self::Data(v) | Self::Other(_, v) => buff.extend_from_slice(&v),

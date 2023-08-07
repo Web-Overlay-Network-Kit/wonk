@@ -83,7 +83,7 @@ impl From<StunType> for u16 {
 pub struct Stun<'i> {
 	pub typ: StunType,
 	pub txid: Cow<'i, [u8; 12]>,
-	pub attrs: Cow<'i, [StunAttr]>
+	pub attrs: Cow<'i, [StunAttr<'i>]> // TODO: Replace this with &'i dyn Iterator<StunAttr<'i>> so that it could either be a Vec<StunAttr> or a StunAttrParser
 }
 impl<'i> Stun<'i> {
 	pub fn has_auth(&self) {
@@ -92,7 +92,7 @@ impl<'i> Stun<'i> {
 }
 
 impl<'i> Stun<'i> {
-	pub fn parse_auth(buffer: &'i [u8], auth: StunAuth<'_>) -> Result<Self> {
+	pub fn decode(buffer: &'i [u8], auth: StunAuth<'_>) -> Result<Self> {
 		if buffer.len() < 20 { return Err(eyre!("Packet length ({}) is too short to be a STUN packet.", buffer.len())); }
 		let typ = u16::from_be_bytes(buffer[0..][..2].try_into().unwrap());
 		let typ = StunType::try_from(typ)?;
@@ -168,12 +168,12 @@ impl<'i> Stun<'i> {
 				StunAuth::Static { username, realm, password } => (username, realm, password),
 				StunAuth::Get(f) => {
 					let Some(username) = attrs.iter().find_map(|a| match a {
-						StunAttr::Username(s) => Some(s.as_str()),
+						StunAttr::Username(s) => Some(s.as_ref()),
 						_ => None
 					}) else {
 						return Err(eyre!("STUN auth failure: packet included an integrity, but didn't include a username."));
 					};
-					let realm = attrs.iter().find_map(|a| match a { StunAttr::Realm(s) => Some(s.as_str()), _ => None});
+					let realm = attrs.iter().find_map(|a| match a { StunAttr::Realm(s) => Some(s.as_ref()), _ => None});
 					let Some(password) = f(username, realm) else {
 						return Err(eyre!("STUN auth failure: StunAuth::Get closure returned None password."));
 					};
@@ -210,9 +210,6 @@ impl<'i> Stun<'i> {
 		Ok(Self {
 			typ, txid, attrs: Cow::Owned(attrs)
 		})
-	}
-	pub fn parse(buffer: &'i[u8]) -> Result<Self> {
-		Self::parse_auth(buffer, StunAuth::NoAuth)
 	}
 	pub fn encode(&self, buff: &mut Vec<u8>) {
 		let mut length = 0;
