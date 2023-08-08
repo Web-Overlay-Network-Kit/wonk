@@ -1,13 +1,15 @@
 #![allow(dead_code)]
-use std::collections::HashSet;
 use std::borrow::Cow;
 
+use hmac::{Hmac, Mac};
+use sha1::Sha1;
+
+use attrs::{StunAttrs, StunAttrsIter};
 use eyre::{Result, eyre};
 
 pub mod attr;
+pub mod attrs;
 use attr::StunAttr;
-
-mod mbedtls_util;
 
 pub enum StunAuth<'i> {
 	NoAuth,
@@ -83,7 +85,38 @@ impl From<StunType> for u16 {
 pub struct Stun<'i> {
 	pub typ: StunType,
 	pub txid: Cow<'i, [u8; 12]>,
-	pub attrs: Cow<'i, [StunAttr<'i>]> // TODO: Replace this with &'i dyn Iterator<StunAttr<'i>> so that it could either be a Vec<StunAttr> or a StunAttrParser
+	pub attrs: StunAttrs<'i>
+}
+impl<'i, 'a> IntoIterator for &'a Stun<'i> {
+	type Item = StunAttr<'i>;
+	type IntoIter = StunIter<'i, 'a>;
+	fn into_iter(self) -> Self::IntoIter {
+		StunIter {
+			integrity: false,
+			fingerprint: false,
+			attrs: self.attrs.into_iter()
+		}
+	}
+}
+
+pub struct StunIter<'i, 'a> {
+	integrity: bool,
+	fingerprint: bool,
+	attrs: StunAttrsIter<'i, 'a>
+}
+impl<'i, 'a> Iterator for StunIter<'i, 'a> {
+	type Item = StunAttr<'i>;
+	fn next(&mut self) -> Option<Self::Item> {
+		let attr = self.attrs.next()?.unwrap();
+		match attr {
+			_ if self.fingerprint => return None,
+			StunAttr::Fingerprint(_) => self.fingerprint = true,
+			_ if self.integrity => return None,
+			StunAttr::Integrity(_) => self.integrity = true,
+			_ => {}
+		}
+		Some(attr)
+	}
 }
 
 impl<'i> Stun<'i> {
@@ -102,113 +135,100 @@ impl<'i> Stun<'i> {
 		let txid = Cow::Borrowed(buffer[8..][..12].try_into().unwrap());
 		let xor_bytes = &buffer[4..][..16];
 
-		let mut integrity = None;
-		let mut fingerprint = None;
+		let attrs = StunAttrs::Parse { buff: &buffer[20..][..length as usize], xor_bytes };
 
-		let mut seen_typs = HashSet::new();
-		let mut attrs = Vec::new();
+		let mut username: Option<Cow<'i, str>> = None;
+		let mut realm: Option<Cow<'i, str>> = None;
+		let mut integrity = false;
+
+		// let mut seen_typs = HashSet::new();
 		let mut i = 0;
-		while i < length {
-			let offset = 20 + i as usize;
-			let typ = u16::from_be_bytes(buffer[offset..][..2].try_into().unwrap());
-			let attr_len = u16::from_be_bytes(buffer[offset + 2..][..2].try_into().unwrap());
-			i += 4;
-
-			// println!("{typ} {attr_len}");
-
-			let max_len = length - i;
-			if attr_len > max_len { return Err(eyre!("Attribute length ({attr_len}) is longer than the remaining STUN length ({max_len}).")); }
-
-			i += attr_len;
-
-			let val = &buffer[offset + 4..][..attr_len as usize];
-
-			let attr = StunAttr::parse(typ, val, xor_bytes)?;
+		for attr in &attrs {
+			let attr = attr?;
+			
+			i += attr.len();
 			while i % 4 != 0 { i += 1; }
 
-			if !seen_typs.contains(&typ) {
-				seen_typs.insert(typ);
-				match attr {
-					_ if fingerprint.is_some() => {}, // Nothing comes after Fingerprint
-					StunAttr::Fingerprint(f) => {
-						fingerprint = Some((f, i));
-						attrs.push(attr);
+			match attr {
+				StunAttr::Fingerprint(f) => {
+					let mut expected = crc32fast::Hasher::new();
+					expected.update(&buffer[..2]);
+					expected.update(&i.to_be_bytes());
+					expected.update(&buffer[4..][..20 - 4 + i as usize - 8]);
+					let expected = expected.finalize() ^ 0x5354554e;
+					if f != expected {
+						return Err(eyre!("STUN fingerprint check failed"));
 					}
-					_ if integrity.is_some() => {} // The only attribute that can come after integrity is the fingerprint
-					StunAttr::Integrity(ref buff) => {
-						integrity = Some((buff.clone(), i));
-						attrs.push(attr);
-					}
-					_ => attrs.push(attr),
+					break; // Nothing comes after the Fingerprint
 				}
-			}
-		}
-
-		// Check the fingerprint
-		if let Some((f, length)) = fingerprint {
-			let mut expected = crc32fast::Hasher::new();
-			expected.update(&buffer[..2]);
-			expected.update(&length.to_be_bytes());
-			expected.update(&buffer[4..][..20 - 4 + length as usize - 8]);
-			let expected = expected.finalize() ^ 0x5354554e;
-			if f != expected {
-				return Err(eyre!("STUN fingerprint check failed"));
-			}
-		}
-
-		// Check the integrity
-		if let Some((i, length)) = integrity {
-			let (username, realm, password) = match auth {
-				StunAuth::NoAuth => return Err(eyre!("STUN auth failure: packed included an integrity, but auth was NoAuth.")),
-				StunAuth::Static { username, realm, password } => (username, realm, password),
-				StunAuth::Get(f) => {
-					let Some(username) = attrs.iter().find_map(|a| match a {
-						StunAttr::Username(s) => Some(s.as_ref()),
-						_ => None
-					}) else {
-						return Err(eyre!("STUN auth failure: packet included an integrity, but didn't include a username."));
+				_ if integrity => {} // The only attribute that can come after integrity is the fingerprint
+				StunAttr::Integrity(integrity_buff) => {
+					let md5_data;
+					let key_data = match auth {
+						StunAuth::NoAuth => return Err(
+							eyre!("StunAuth::NoAuth but the packet contained an integrity attribute.")
+						),
+						StunAuth::Static { username, realm, password } => {
+							if let Some(realm) = realm {
+								// I can't figure out how to DRY this so... yeah.
+								let mut ctx = md5::Context::new();
+								ctx.consume(username.as_bytes());
+								ctx.consume(b":");
+								ctx.consume(realm.as_bytes());
+								ctx.consume(b":");
+								ctx.consume(password.as_bytes());
+								md5_data = ctx.compute().0;
+								&md5_data
+							} else {
+								password.as_bytes()
+							}
+						},
+						StunAuth::Get(getter) => {
+							let Some(username) = username.take() else {
+								return Err(eyre!("StunAuth::Get but packet didn't include a username"))
+							};
+							match realm.take() {
+								Some(realm) => {
+									let Some(password) = getter(&username, Some(&realm)) else { return Err(eyre!("StunAuth::Get returned no password.")) };
+									let mut ctx = md5::Context::new();
+									ctx.consume(username.as_bytes());
+									ctx.consume(b":");
+									ctx.consume(realm.as_bytes());
+									ctx.consume(b":");
+									ctx.consume(password.as_bytes());
+									md5_data = ctx.compute().0;
+									&md5_data
+								},
+								None => {
+									let Some(password) = getter(&username, None) else { return Err(eyre!("StunAuth::Get returned no password.")); };
+									password.as_bytes()
+								}
+							}
+						}
 					};
-					let realm = attrs.iter().find_map(|a| match a { StunAttr::Realm(s) => Some(s.as_ref()), _ => None});
-					let Some(password) = f(username, realm) else {
-						return Err(eyre!("STUN auth failure: StunAuth::Get closure returned None password."));
-					};
-					(username, realm, password)
-				}
-			};
 
-			let turn_auth;
-			let key_data = match realm {
-				Some(realm) => {
-					turn_auth = mbedtls_util::md5(&[
-						username.as_bytes(),
-						":".as_bytes(),
-						realm.as_bytes(),
-						":".as_bytes(),
-						password.as_bytes()
-					]);
-					&turn_auth
+					let mut hmac = Hmac::<Sha1>::new_from_slice(key_data).expect("oops");
+					hmac.update(&buffer[..2],);
+					hmac.update(&length.to_be_bytes(),);
+					hmac.update(&buffer[4..][..(20 - 4) + length as usize - 4 - 20]);
+
+					hmac.verify_slice(integrity_buff.as_ref())?;
+
+					integrity = true;
 				},
-				None => password.as_bytes()
-			};
-
-			let expected = mbedtls_util::sha1_hmac(key_data, &[
-				&buffer[..2],
-				&length.to_be_bytes(),
-				&buffer[4..][..(20 - 4) + length as usize - 4 - 20]
-			]);
-
-			if &expected != i.as_ref() {
-				return Err(eyre!("Integrity Check failed."));
+				StunAttr::Username(s) if username.is_none() => username = Some(s),
+				StunAttr::Realm(s) if realm.is_none() => realm = Some(s),
+				_ => {}
 			}
 		}
 
 		Ok(Self {
-			typ, txid, attrs: Cow::Owned(attrs)
+			typ, txid, attrs
 		})
 	}
 	pub fn encode(&self, buff: &mut Vec<u8>) {
 		let mut length = 0;
-		for attr in self.attrs.iter() {
+		for attr in self.attrs.into_iter().flatten() {
 			length += 4;
 			length += attr.len();
 			while length % 4 != 0 { length += 1; }
@@ -224,7 +244,7 @@ impl<'i> Stun<'i> {
 		xor_bytes[..4].copy_from_slice(&0x2112A442u32.to_be_bytes());
 		xor_bytes[4..].copy_from_slice(self.txid.as_ref());
 
-		for attr in self.attrs.iter() {
+		for attr in self.attrs.into_iter().flatten() {
 			attr.encode(buff, &xor_bytes)
 		}
 	}

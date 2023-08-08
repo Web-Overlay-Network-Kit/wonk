@@ -2,6 +2,5 @@
 members = [
 	"proxy-rs",
 	"wonk-relay/stun",
-	"wonk-relay/mbedtls",
 	"wonk-relay/relay"
 ]

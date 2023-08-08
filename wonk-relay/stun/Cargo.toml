@@ -6,4 +6,6 @@ edition = "2021"
 [dependencies]
 crc32fast = "1.3.2"
 eyre = "0.6.8"
-mbedtls = { path = "../mbedtls" }
+hmac = "0.12.1"
+md5 = "0.7.0"
+sha1 = "0.10.5"
