@@ -13,11 +13,12 @@ impl<'i> UnknownAttributes<'i> {
 			Self::List(l) => (l.len() * 2) as u16
 		}
 	}
-	pub fn encode(&self, buff: &mut Vec<u8>) {
+	pub fn encode(&self, mut buff: &mut [u8]) {
 		match self {
-			Self::Parse(s) => buff.extend_from_slice(s),
+			Self::Parse(s) => buff.copy_from_slice(s),
 			Self::List(l) => for t in l.as_ref() {
-				buff.extend_from_slice(&t.to_be_bytes())
+				buff[..2].copy_from_slice(&t.to_be_bytes());
+				buff = &mut buff[2..];
 			}
 		}
 	}
@@ -94,44 +95,39 @@ pub enum StunAttr<'i> {
 	Other(u16, &'i [u8])
 }
 
-fn stun_addr_attr(data: &[u8], xor_bytes: Option<&[u8]>) -> Result<SocketAddr> {
+fn map_xor_bytes<const N: usize>(mut arr: [u8; N], xor_bytes: &[u8; 16]) -> [u8; N] {
+	for i in 0..N {
+		arr[i] ^= xor_bytes[i]
+	}
+	arr
+}
+
+fn stun_addr_attr(data: &[u8], xor_bytes: &[u8; 16]) -> Result<SocketAddr> {
 	if data.len() < 4 { return Err(eyre!("STUN Address type attribute is too short ({}).", data.len())); }
 	let family = data[1];
-	let port_bytes = std::array::from_fn(|i| {
-		data[2 + i] ^ xor_bytes.map(|s| s[i]).unwrap_or_default()
-	});
-	let port = u16::from_be_bytes(port_bytes);
+	let port = u16::from_be_bytes(map_xor_bytes(data[2..][..2].try_into().unwrap(), xor_bytes));
 	let ip = match family {
 		0x01 => {
 			if data.len() != 8 { return Err(eyre!("STUN Address type attribute is wrong size ({}) for family ({family}).", data.len())); }
-			let ip_bytes: [u8; 4] = std::array::from_fn(|i| {
-				data[4 + i] ^ xor_bytes.map(|s| s[i]).unwrap_or_default()
-			});
-			IpAddr::from(ip_bytes)
+			IpAddr::from(map_xor_bytes(<[u8; 4]>::try_from(&data[4..]).unwrap(), xor_bytes))
 		},
 		0x02 => {
 			if data.len() != 20 { return Err(eyre!("STUN Address type attribute is wrong size ({}) for family ({family}).", data.len())); }
-			let ip_bytes: [u8; 16] = std::array::from_fn(|i| {
-				data[4 + i] ^ xor_bytes.map(|s| s[i]).unwrap_or_default()
-			});
-			IpAddr::from(ip_bytes)
+			IpAddr::from(map_xor_bytes(<[u8; 16]>::try_from(&data[4..]).unwrap(), xor_bytes))
 		},
 		_ => { return Err(eyre!("STUN Address attribute unknown family ({family}).")); }
 	};
 	Ok(SocketAddr::new(ip, port))
 }
 
-fn encode_addr_attr(addr: &SocketAddr, buff: &mut Vec<u8>, xor_bytes: Option<&[u8]>) {
-	buff.push(0);
+fn encode_addr_attr(addr: &SocketAddr, buff: &mut [u8], xor_bytes: &[u8; 16]) {
+	buff[0] = 0;
 	let family = if addr.is_ipv4() { 0x01 } else { 0x02 };
-	buff.push(family);
-	
-	let xor_bytes = || xor_bytes.iter().cloned().flatten().cloned().chain(std::iter::repeat(0));
-
-	buff.extend(addr.port().to_be_bytes().into_iter().zip(xor_bytes()).map(|(a, b)| a ^ b));
+	buff[1] = family;
+	buff[2..][2..].copy_from_slice(&map_xor_bytes(addr.port().to_be_bytes(), xor_bytes));
 	match addr.ip() {
-		IpAddr::V4(ip) => buff.extend(ip.octets().into_iter().zip(xor_bytes()).map(|(a, b)| a ^ b)),
-		IpAddr::V6(ip) => buff.extend(ip.octets().into_iter().zip(xor_bytes()).map(|(a, b)| a ^ b))
+		IpAddr::V4(ip) => buff[4..][..4].copy_from_slice(&map_xor_bytes(ip.octets(), xor_bytes)),
+		IpAddr::V6(ip) => buff[4..][..16].copy_from_slice(&map_xor_bytes(ip.octets(), xor_bytes))
 	}
 }
 
@@ -169,7 +165,7 @@ impl<'i> StunAttr<'i> {
 			Self::Other(typ, _) => *typ
 		}
 	}
-	pub fn len(&self) -> u16 {
+	pub fn length(&self) -> u16 {
 		match self {
 			Self::Mapped(s) | Self::XMapped(s) |
 			Self::AlternateServer(s) | Self::XPeer(s) |
@@ -192,9 +188,14 @@ impl<'i> StunAttr<'i> {
 			Self::Other(_, v) => v.len() as u16
 		}
 	}
-	pub fn parse(typ: u16, data: &'i[u8], xor_bytes: &'_[u8]) -> Result<Self> {
+	pub fn len(&self) -> u16 {
+		let mut ret = 4 + self.length();
+		while ret % 4 != 0 { ret += 1; }
+		ret
+	}
+	pub fn parse(typ: u16, data: &'i[u8], xor_bytes: &'_[u8; 16]) -> Result<Self> {
 		Ok(match typ {
-			0x0001 => Self::Mapped(stun_addr_attr(data, None)?),
+			0x0001 => Self::Mapped(stun_addr_attr(data, &[0; 16])?),
 			0x0006 => Self::Username(std::str::from_utf8(data)?.into()),
 			0x0008 => Self::Integrity(<&[u8; 20]>::try_from(data)?),
 			0x0009 => {
@@ -206,16 +207,16 @@ impl<'i> StunAttr<'i> {
 			0x000A => Self::UnknownAttributes(data.try_into()?),
 			0x0014 => Self::Realm(std::str::from_utf8(data)?.into()),
 			0x0015 => Self::Nonce(std::str::from_utf8(data)?.into()),
-			0x0020 => Self::XMapped(stun_addr_attr(data, Some(xor_bytes))?),
+			0x0020 => Self::XMapped(stun_addr_attr(data, xor_bytes)?),
 			0x8022 => Self::Software(std::str::from_utf8(data)?.into()),
-			0x8023 => Self::AlternateServer(stun_addr_attr(data, None)?),
+			0x8023 => Self::AlternateServer(stun_addr_attr(data, &[0; 16])?),
 			0x8028 => Self::Fingerprint(u32::from_be_bytes(data.try_into()?)),
 
 			0x000C => Self::Channel(u32::from_be_bytes(data.try_into()?)),
 			0x000D => Self::Lifetime(u32::from_be_bytes(data.try_into()?)),
-			0x0012 => Self::XPeer(stun_addr_attr(data, Some(xor_bytes))?),
+			0x0012 => Self::XPeer(stun_addr_attr(data, xor_bytes)?),
 			0x0013 => Self::Data(data.into()),
-			0x0016 => Self::XRelayed(stun_addr_attr(data, Some(xor_bytes))?),
+			0x0016 => Self::XRelayed(stun_addr_attr(data, xor_bytes)?),
 			0x0018 => Self::EvenPort(data.get(0).map(|b| b & 0b10000000 != 0).unwrap_or(true)),
 			0x0019 => Self::RequestedTransport(data.get(0).cloned().ok_or(eyre!("STUN Requested Transport attribute wrong size."))?),
 			0x001A => Self::DontFragment,
@@ -229,39 +230,40 @@ impl<'i> StunAttr<'i> {
 			_ => Self::Other(typ, data.into())
 		})
 	}
-	pub fn encode(&self, buff: &mut Vec<u8>, xor_bytes: &[u8]) {
-		// TODO: I can't use xor_bytes, because it would be an immutable borrow of buff which is also borrowed mutably.
-		
-		buff.extend_from_slice(&self.typ().to_be_bytes());
-		buff.extend_from_slice(&self.len().to_be_bytes());
+	pub fn encode(&self, buff: &mut [u8], xor_bytes: &[u8; 16]) {
+		buff[0..][..2].copy_from_slice(&self.typ().to_be_bytes());
+		let mut length = self.length();
+		buff[2..][..2].copy_from_slice(&length.to_be_bytes());
 
+		let data = &mut buff[4..][..length as usize];
 		match self {
-			Self::Mapped(s) | Self::AlternateServer(s) => encode_addr_attr(s, buff, None),
-			Self::XMapped(s) | Self::XPeer(s) | Self::XRelayed(s) => encode_addr_attr(s, buff, Some(xor_bytes)),
+			Self::Mapped(s) | Self::AlternateServer(s) => encode_addr_attr(s, data, &[0; 16]),
+			Self::XMapped(s) | Self::XPeer(s) | Self::XRelayed(s) => encode_addr_attr(s, data, xor_bytes),
 			Self::Username(s) | Self::Realm(s) |
 			Self::Nonce(s) | Self::Software(s) => {
-				buff.extend_from_slice(s.as_bytes());
+				data.copy_from_slice(s.as_bytes());
 			},
-			Self::Integrity(v) => buff.extend_from_slice(v.as_ref()),
+			Self::Integrity(v) => data.copy_from_slice(v.as_ref()),
 			Self::Error{code, message} => {
-				buff.push(0);
-				buff.push(0);
-				buff.push((code / 100) as u8);
-				buff.push((code % 100) as u8);
-				buff.extend_from_slice(message.as_bytes());
+				data[0] = 0;
+				data[1] = 0;
+				data[2] = (code / 100) as u8;
+				data[3] = (code % 100) as u8;
+				data[4..].copy_from_slice(message.as_bytes());
 			},
-			Self::UnknownAttributes(ua) => ua.encode(buff),
+			Self::UnknownAttributes(ua) => ua.encode(data),
 			Self::Fingerprint(v) | Self::Channel(v) | Self::Lifetime(v) |
-			Self::ReservationToken(v) | Self::Priority(v) => buff.extend_from_slice(&v.to_be_bytes()),
-			Self::Data(v) | Self::Other(_, v) => buff.extend_from_slice(&v),
-			Self::EvenPort(b) => buff.push(match b { true => 0b10000000, false => 0}),
-			Self::RequestedTransport(protocol) => buff.push(*protocol),
+			Self::ReservationToken(v) | Self::Priority(v) => data.copy_from_slice(&v.to_be_bytes()),
+			Self::Data(v) | Self::Other(_, v) => data.copy_from_slice(&v),
+			Self::EvenPort(b) => data[0] = match b { true => 0b10000000, false => 0},
+			Self::RequestedTransport(protocol) => data[0] = *protocol,
 			Self::DontFragment | Self::UseCandidate => {/* Do Nothing */},
-			Self::IceControlled(v) | Self::IceControlling(v) => buff.extend_from_slice(&v.to_be_bytes()),
+			Self::IceControlled(v) | Self::IceControlling(v) => data.copy_from_slice(&v.to_be_bytes()),
 		}
 
-		while buff.len() % 4 != 0 {
-			buff.push(0);
+		while length % 4 != 0 {
+			buff[4 + length as usize] = 0;
+			length += 1;
 		}
 	}
 }

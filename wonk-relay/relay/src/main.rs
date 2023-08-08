@@ -5,6 +5,7 @@ use std::net::UdpSocket;
 fn main() -> Result<()> {
 	let sock = UdpSocket::bind("[::]:3478")?;
 	let mut buff = [0u8; 4096];
+	let mut out_buff = [0u8; 4096];
 
 	loop {
 		let Ok((len, addr)) = sock.recv_from(&mut buff) else { continue; };
@@ -25,19 +26,17 @@ fn main() -> Result<()> {
 			}
 			// TURN Allocate Req (Auth)
 			StunType::Req(0x003) => {
-				let attrs = &[
+				let attrs = [
 					StunAttr::Error { code: 401, message: "".into() },
 					StunAttr::Nonce("nonce".into()),
 					StunAttr::Realm("realm".into())
-				] as &[StunAttr<'_>];
-				let response = Stun {
+				];
+				let len = Stun {
 					typ: StunType::Err(0x003),
 					txid: msg.txid,
-					attrs: attrs.into()
-				};
-				let mut buff = Vec::new();
-				response.encode(&mut buff);
-				sock.send_to(&buff, addr)?;
+					attrs: attrs.as_slice().into()
+				}.encode(&mut out_buff, StunAuth::NoAuth, true)?;
+				sock.send_to(&out_buff[..len], addr)?;
 			}
 			_ => {}
 		}

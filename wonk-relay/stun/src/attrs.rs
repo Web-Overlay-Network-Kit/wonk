@@ -5,9 +5,33 @@ use crate::attr::StunAttr;
 pub enum StunAttrs<'i> {
 	Parse {
 		buff: &'i [u8],
-		xor_bytes: &'i [u8]
+		xor_bytes: &'i [u8; 16]
 	},
 	List(&'i [StunAttr<'i>])
+}
+impl<'i> StunAttrs<'i> {
+	pub fn len(&self) -> u16 {
+		match self {
+			Self::Parse { buff, .. } => buff.len() as u16,
+			Self::List(l) => {
+				let mut ret = 0;
+				for attr in l.iter() {
+					ret += attr.len();
+				}
+				ret
+			}
+		}
+	}
+	pub fn encode(&self, mut buff: &mut [u8], xor_bytes: &[u8; 16]) {
+		match self {
+			Self::Parse { buff: parse, ..} => buff.copy_from_slice(parse),
+			Self::List(l) => for attr in l.iter() {
+				attr.encode(buff, xor_bytes);
+
+				buff = &mut buff[attr.len() as usize..];
+			}
+		}
+	}
 }
 impl<'i, 'a> IntoIterator for &'a StunAttrs<'i> {
 	type Item = Result<StunAttr<'i>>;
@@ -28,7 +52,7 @@ impl<'i> From<&'i [StunAttr<'i>]> for StunAttrs<'i> {
 pub enum StunAttrsIter<'i, 'a> {
 	Parse {
 		buff: &'i [u8],
-		xor_bytes: &'i [u8]
+		xor_bytes: &'i [u8; 16]
 	},
 	List(std::slice::Iter<'a, StunAttr<'i>>)
 }

@@ -132,7 +132,7 @@ impl<'i> Stun<'i> {
 		if magic != 0x2112A442 { return Err(eyre!("Wrong STUN magic value (${magic:x}).")); }
 
 		let txid = (&buffer[8..][..12]).try_into().unwrap();
-		let xor_bytes = &buffer[4..][..16];
+		let xor_bytes = (&buffer[4..][..16]).try_into().unwrap();
 
 		let attrs = StunAttrs::Parse { buff: &buffer[20..][..length as usize], xor_bytes };
 
@@ -190,8 +190,8 @@ impl<'i> Stun<'i> {
 					};
 
 					let mut hmac = Hmac::<Sha1>::new_from_slice(key_data).expect("oops");
-					hmac.update(&buffer[..2],);
-					hmac.update(&length.to_be_bytes(),);
+					hmac.update(&buffer[..2]);
+					hmac.update(&length.to_be_bytes());
 					hmac.update(&buffer[4..][..(20 - 4) + length as usize - 4 - 20]);
 
 					hmac.verify_slice(integrity_buff.as_ref())?;
@@ -208,26 +208,51 @@ impl<'i> Stun<'i> {
 			typ, txid, attrs
 		})
 	}
-	pub fn encode(&self, buff: &mut Vec<u8>) {
-		let mut length = 0;
-		for attr in self.attrs.into_iter().flatten() {
-			length += 4;
-			length += attr.len();
-			while length % 4 != 0 { length += 1; }
+	pub fn encode(&self, buff: &mut [u8], auth: StunAuth<'_>, fingerprint: bool) -> Result<usize> {
+		let orig_length = self.attrs.len();
+		let mut length = orig_length;
+
+		if let StunAuth::Static {..} = auth { length += 4 + 20; }
+		if fingerprint { length += 8; }
+
+		let len = 20 + length;
+
+		if buff.len() < len as usize { return Err(eyre!("Buffer isn't large enough to contain this message.")) }
+
+		buff[0..][..2].copy_from_slice(&u16::from(self.typ).to_be_bytes());
+		buff[2..][..2].copy_from_slice(&length.to_be_bytes());
+		buff[4..][..4].copy_from_slice(&0x2112A442u32.to_be_bytes());
+		buff[8..][..12].copy_from_slice(self.txid);
+
+		let xor_bytes = <[u8; 16]>::try_from(&buff[4..][..16]).unwrap();
+
+		self.attrs.encode(&mut buff[20..][..orig_length as usize], &xor_bytes);
+
+		if let StunAuth::Static { username, realm, password } = auth {
+			length += 24;
+
+			let md5_data;
+			let key_data = if let Some(realm) = realm {
+				let mut ctx = md5::Context::new();
+				ctx.consume(username.as_bytes());
+				ctx.consume(b":");
+				ctx.consume(realm.as_bytes());
+				ctx.consume(b":");
+				ctx.consume(password.as_bytes());
+				md5_data = ctx.compute().0;
+				&md5_data
+			} else {
+				password.as_bytes()
+			};
+
+			let mut hmac = Hmac::<Sha1>::new_from_slice(key_data)?;
+			hmac.update(&buff[..2]);
+			hmac.update(&length.to_be_bytes());
+			hmac.update(&buff[4..][..(20 - 4) + length as usize - 4 - 20]);
+			let integrity = hmac.finalize().into_bytes();
+			StunAttr::Integrity(integrity.as_slice().try_into().unwrap()).encode(&mut buff[20 + length as usize..][..24], &xor_bytes);
 		}
-		buff.reserve(20 + length as usize);
 
-		buff.extend_from_slice(&u16::from(self.typ).to_be_bytes());
-		buff.extend_from_slice(&length.to_be_bytes());
-		buff.extend_from_slice(&0x2112A442u32.to_be_bytes());
-		buff.extend_from_slice(self.txid.as_ref());
-
-		let mut xor_bytes = [0u8; 16];
-		xor_bytes[..4].copy_from_slice(&0x2112A442u32.to_be_bytes());
-		xor_bytes[4..].copy_from_slice(self.txid.as_ref());
-
-		for attr in self.attrs.into_iter().flatten() {
-			attr.encode(buff, &xor_bytes)
-		}
+		Ok(len as usize)
 	}
 }
