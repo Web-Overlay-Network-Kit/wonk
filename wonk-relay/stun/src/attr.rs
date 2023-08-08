@@ -1,11 +1,10 @@
 use eyre::{Result, eyre, Report};
 use std::net::{SocketAddr, IpAddr};
-use std::borrow::Cow;
 
 #[derive(Debug, Clone)]
 pub enum UnknownAttributes<'i> {
 	Parse(&'i [u8]),
-	List(Cow<'i, [u16]>)
+	List(&'i [u16])
 }
 impl<'i> UnknownAttributes<'i> {
 	pub fn len(&self) -> u16 {
@@ -64,14 +63,14 @@ impl<'a> Iterator for UnknownAttributesIter<'a> {
 pub enum StunAttr<'i> {
 	// RFC 5389:
 	/* 0x0001 */ Mapped(SocketAddr),
-	/* 0x0006 */ Username(Cow<'i, str>),
-	/* 0x0008 */ Integrity(Cow<'i, [u8; 20]>),
-	/* 0x0009 */ Error { code: u16, message: Cow<'i, str> },
+	/* 0x0006 */ Username(&'i str),
+	/* 0x0008 */ Integrity(&'i [u8; 20]),
+	/* 0x0009 */ Error { code: u16, message: &'i str },
 	/* 0x000A */ UnknownAttributes(UnknownAttributes<'i>),
-	/* 0x0014 */ Realm(Cow<'i, str>),
-	/* 0x0015 */ Nonce(Cow<'i, str>),
+	/* 0x0014 */ Realm(&'i str),
+	/* 0x0015 */ Nonce(&'i str),
 	/* 0x0020 */ XMapped(SocketAddr),
-	/* 0x8022 */ Software(Cow<'i, str>),
+	/* 0x8022 */ Software(&'i str),
 	/* 0x8023 */ AlternateServer(SocketAddr),
 	/* 0x8028 */ Fingerprint(u32),
 
@@ -79,7 +78,7 @@ pub enum StunAttr<'i> {
 	/* 0x000C */ Channel(u32),
 	/* 0x000D */ Lifetime(u32),
 	/* 0x0012 */ XPeer(SocketAddr),
-	/* 0x0013 */ Data(Cow< 'i,[u8]>),
+	/* 0x0013 */ Data(&'i [u8]),
 	/* 0x0016 */ XRelayed(SocketAddr),
 	/* 0x0018 */ EvenPort(bool),
 	/* 0x0019 */ RequestedTransport(u8),
@@ -92,7 +91,7 @@ pub enum StunAttr<'i> {
 	/* 0x8029 */ IceControlled(u64),
 	/* 0x802A */ IceControlling(u64),
 
-	Other(u16, Cow<'i, [u8]>)
+	Other(u16, &'i [u8])
 }
 
 fn stun_addr_attr(data: &[u8], xor_bytes: Option<&[u8]>) -> Result<SocketAddr> {
@@ -197,7 +196,7 @@ impl<'i> StunAttr<'i> {
 		Ok(match typ {
 			0x0001 => Self::Mapped(stun_addr_attr(data, None)?),
 			0x0006 => Self::Username(std::str::from_utf8(data)?.into()),
-			0x0008 => Self::Integrity(Cow::Borrowed(<&[u8; 20]>::try_from(data)?)),
+			0x0008 => Self::Integrity(<&[u8; 20]>::try_from(data)?),
 			0x0009 => {
 				if data.len() < 4 { return Err(eyre!("Error attribute not long enough.")) }
 				let code = 100 * data[2] as u16 + data[3] as u16;

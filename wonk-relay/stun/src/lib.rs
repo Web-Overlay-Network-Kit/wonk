@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-use std::borrow::Cow;
 
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
@@ -84,7 +83,7 @@ impl From<StunType> for u16 {
 #[derive(Debug, Clone)]
 pub struct Stun<'i> {
 	pub typ: StunType,
-	pub txid: Cow<'i, [u8; 12]>,
+	pub txid: &'i [u8; 12],
 	pub attrs: StunAttrs<'i>
 }
 impl<'i, 'a> IntoIterator for &'a Stun<'i> {
@@ -132,13 +131,13 @@ impl<'i> Stun<'i> {
 		let magic = u32::from_be_bytes(buffer[4..][..4].try_into().unwrap());
 		if magic != 0x2112A442 { return Err(eyre!("Wrong STUN magic value (${magic:x}).")); }
 
-		let txid = Cow::Borrowed(buffer[8..][..12].try_into().unwrap());
+		let txid = (&buffer[8..][..12]).try_into().unwrap();
 		let xor_bytes = &buffer[4..][..16];
 
 		let attrs = StunAttrs::Parse { buff: &buffer[20..][..length as usize], xor_bytes };
 
-		let mut username: Option<Cow<'i, str>> = None;
-		let mut realm: Option<Cow<'i, str>> = None;
+		let mut username = None;
+		let mut realm = None;
 		let mut integrity = false;
 
 		// let mut seen_typs = HashSet::new();
@@ -163,48 +162,31 @@ impl<'i> Stun<'i> {
 				}
 				_ if integrity => {} // The only attribute that can come after integrity is the fingerprint
 				StunAttr::Integrity(integrity_buff) => {
-					let md5_data;
-					let key_data = match auth {
-						StunAuth::NoAuth => return Err(
-							eyre!("StunAuth::NoAuth but the packet contained an integrity attribute.")
-						),
-						StunAuth::Static { username, realm, password } => {
-							if let Some(realm) = realm {
-								// I can't figure out how to DRY this so... yeah.
-								let mut ctx = md5::Context::new();
-								ctx.consume(username.as_bytes());
-								ctx.consume(b":");
-								ctx.consume(realm.as_bytes());
-								ctx.consume(b":");
-								ctx.consume(password.as_bytes());
-								md5_data = ctx.compute().0;
-								&md5_data
-							} else {
-								password.as_bytes()
-							}
+					let (username, realm, password) = match (&auth, username, realm) {
+						(StunAuth::Static { username, realm, password }, _, _) => {
+							(*username, *realm, *password)
 						},
-						StunAuth::Get(getter) => {
-							let Some(username) = username.take() else {
-								return Err(eyre!("StunAuth::Get but packet didn't include a username"))
+						(StunAuth::Get(getter), Some(username), realm) => {
+							let Some(password) = getter(username, realm) else {
+								return Err(eyre!("StunAuth::Get returned no password for these credentials"))
 							};
-							match realm.take() {
-								Some(realm) => {
-									let Some(password) = getter(&username, Some(&realm)) else { return Err(eyre!("StunAuth::Get returned no password.")) };
-									let mut ctx = md5::Context::new();
-									ctx.consume(username.as_bytes());
-									ctx.consume(b":");
-									ctx.consume(realm.as_bytes());
-									ctx.consume(b":");
-									ctx.consume(password.as_bytes());
-									md5_data = ctx.compute().0;
-									&md5_data
-								},
-								None => {
-									let Some(password) = getter(&username, None) else { return Err(eyre!("StunAuth::Get returned no password.")); };
-									password.as_bytes()
-								}
-							}
+							(username, realm, password)
 						}
+						_ => return Err(eyre!("StunAuth auth failure."))
+					};
+
+					let md5_data;
+					let key_data = if let Some(realm) = realm {
+						let mut ctx = md5::Context::new();
+						ctx.consume(username.as_bytes());
+						ctx.consume(b":");
+						ctx.consume(realm.as_bytes());
+						ctx.consume(b":");
+						ctx.consume(password.as_bytes());
+						md5_data = ctx.compute().0;
+						&md5_data
+					} else {
+						password.as_bytes()
 					};
 
 					let mut hmac = Hmac::<Sha1>::new_from_slice(key_data).expect("oops");

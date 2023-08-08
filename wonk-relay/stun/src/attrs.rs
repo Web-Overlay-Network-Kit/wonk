@@ -1,5 +1,4 @@
 use eyre::{Result, eyre};
-use std::borrow::Cow;
 use crate::attr::StunAttr;
 
 #[derive(Debug, Clone)]
@@ -8,7 +7,7 @@ pub enum StunAttrs<'i> {
 		buff: &'i [u8],
 		xor_bytes: &'i [u8]
 	},
-	List(Cow<'i, [StunAttr<'i>]>)
+	List(&'i [StunAttr<'i>])
 }
 impl<'i, 'a> IntoIterator for &'a StunAttrs<'i> {
 	type Item = Result<StunAttr<'i>>;
@@ -22,7 +21,7 @@ impl<'i, 'a> IntoIterator for &'a StunAttrs<'i> {
 }
 impl<'i> From<&'i [StunAttr<'i>]> for StunAttrs<'i> {
 	fn from(value: &'i [StunAttr<'i>]) -> Self {
-		Self::List(Cow::Borrowed(value))
+		Self::List(value)
 	}
 }
 

@@ -33,7 +33,7 @@ fn main() -> Result<()> {
 				let response = Stun {
 					typ: StunType::Err(0x003),
 					txid: msg.txid,
-					attrs: stun::attrs::StunAttrs::from(attrs)
+					attrs: attrs.into()
 				};
 				let mut buff = Vec::new();
 				response.encode(&mut buff);
