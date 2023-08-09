@@ -30,11 +30,7 @@ fn main() -> Result<()> {
 				StunAttr::Mapped(addr),
 				StunAttr::XMapped(addr)
 			];
-			let len = Stun {
-				typ: StunType::Res(0x001),
-				txid: msg.txid,
-				attrs: attrs.as_slice().into()
-			}.encode(&mut out_buff, StunAuth::NoAuth, true)?;
+			let len = msg.res(&attrs).encode(&mut out_buff, StunAuth::NoAuth, true)?;
 			sock.send_to(&out_buff[..len], addr)?;
 			continue;
 		}
@@ -47,17 +43,12 @@ fn main() -> Result<()> {
 					StunAttr::Nonce("nonce".into()),
 					StunAttr::Realm("realm".into())
 				];
-				Stun {
-					typ: StunType::Err(0x003),
-					txid: msg.txid,
-					attrs: attrs.as_slice().into()
-				}.encode(&mut out_buff, StunAuth::NoAuth, true)?
+				msg.err(&attrs).encode(&mut out_buff, StunAuth::NoAuth, true)?
 			} else {
 				let username = msg.into_iter().find_map(|a| match a { StunAttr::Username(s) => Some(s), _ => None })
 					.expect("Shouldn't have passed integrity check without a username.");
-				// if let Some(existing) = associations.get(&addr) {
-					
-				// }
+				
+				// TODO: Map the socketaddr to the associated username, and if there's already an association, then return an error
 
 				let auth = StunAuth::Static { username, realm: Some("realm"), password: "the/turn/password/constant" };
 				let attrs = [
@@ -65,11 +56,7 @@ fn main() -> Result<()> {
 					StunAttr::XMapped(addr),
 					StunAttr::Lifetime(3600)
 				];
-				Stun {
-					typ: StunType::Res(0x003),
-					txid: msg.txid,
-					attrs: attrs.as_slice().into()
-				}.encode(&mut out_buff, auth, true)?
+				msg.res(&attrs).encode(&mut out_buff, auth, true)?
 			};
 			sock.send_to(&out_buff[..len], addr)?;
 		}

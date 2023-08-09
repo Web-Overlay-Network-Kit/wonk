@@ -99,6 +99,23 @@ impl<'i, 'a> IntoIterator for &'a Stun<'i> {
 	}
 }
 
+impl<'i> Stun<'i> {
+	pub fn res(&self, attrs: &'i [StunAttr<'i>]) -> Self {
+		Self {
+			typ: StunType::Res(self.typ.method()),
+			txid: self.txid,
+			attrs: attrs.into()
+		}
+	}
+	pub fn err(&self, attrs: &'i [StunAttr<'i>]) -> Self {
+		Self {
+			typ: StunType::Err(self.typ.method()),
+			txid: self.txid,
+			attrs: attrs.into()
+		}
+	}
+}
+
 pub struct StunIter<'i, 'a> {
 	integrity: bool,
 	fingerprint: bool,
