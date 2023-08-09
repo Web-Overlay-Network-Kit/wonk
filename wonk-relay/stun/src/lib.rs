@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![feature(ip)]
 
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
@@ -212,7 +213,7 @@ impl<'i> Stun<'i> {
 		let orig_length = self.attrs.len();
 		let mut length = orig_length;
 
-		if let StunAuth::Static {..} = auth { length += 4 + 20; }
+		if let StunAuth::Static {..} = auth { length += 24; }
 		if fingerprint { length += 8; }
 
 		let len = 20 + length;
@@ -227,6 +228,8 @@ impl<'i> Stun<'i> {
 		let xor_bytes = <[u8; 16]>::try_from(&buff[4..][..16]).unwrap();
 
 		self.attrs.encode(&mut buff[20..][..orig_length as usize], &xor_bytes);
+
+		let mut length = orig_length;
 
 		if let StunAuth::Static { username, realm, password } = auth {
 			length += 24;
@@ -248,9 +251,20 @@ impl<'i> Stun<'i> {
 			let mut hmac = Hmac::<Sha1>::new_from_slice(key_data)?;
 			hmac.update(&buff[..2]);
 			hmac.update(&length.to_be_bytes());
-			hmac.update(&buff[4..][..(20 - 4) + length as usize - 4 - 20]);
+			hmac.update(&buff[4..][..16 + length as usize - 24]);
 			let integrity = hmac.finalize().into_bytes();
-			StunAttr::Integrity(integrity.as_slice().try_into().unwrap()).encode(&mut buff[20 + length as usize..][..24], &xor_bytes);
+			StunAttr::Integrity(integrity.as_slice().try_into().unwrap()).encode(&mut buff[20 + length as usize - 24..][..24], &xor_bytes);
+		}
+
+		if fingerprint {
+			length += 8;
+
+			let mut ctx = crc32fast::Hasher::new();
+			ctx.update(&buff[..2]);
+			ctx.update(&length.to_be_bytes());
+			ctx.update(&buff[4..][..16 + length as usize - 8]);
+			let fingerprint = ctx.finalize() ^ 0x5354554e;
+			StunAttr::Fingerprint(fingerprint).encode(&mut buff[20 + length as usize - 8..][..8], &xor_bytes);
 		}
 
 		Ok(len as usize)

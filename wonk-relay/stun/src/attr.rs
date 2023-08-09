@@ -121,11 +121,12 @@ fn stun_addr_attr(data: &[u8], xor_bytes: &[u8; 16]) -> Result<SocketAddr> {
 }
 
 fn encode_addr_attr(addr: &SocketAddr, buff: &mut [u8], xor_bytes: &[u8; 16]) {
+	let ip = addr.ip().to_canonical();
 	buff[0] = 0;
-	let family = if addr.is_ipv4() { 0x01 } else { 0x02 };
+	let family = if ip.is_ipv4() { 0x01 } else { 0x02 };
 	buff[1] = family;
-	buff[2..][2..].copy_from_slice(&map_xor_bytes(addr.port().to_be_bytes(), xor_bytes));
-	match addr.ip() {
+	buff[2..][..2].copy_from_slice(&map_xor_bytes(addr.port().to_be_bytes(), xor_bytes));
+	match ip {
 		IpAddr::V4(ip) => buff[4..][..4].copy_from_slice(&map_xor_bytes(ip.octets(), xor_bytes)),
 		IpAddr::V6(ip) => buff[4..][..16].copy_from_slice(&map_xor_bytes(ip.octets(), xor_bytes))
 	}
@@ -169,9 +170,9 @@ impl<'i> StunAttr<'i> {
 		match self {
 			Self::Mapped(s) | Self::XMapped(s) |
 			Self::AlternateServer(s) | Self::XPeer(s) |
-			Self::XRelayed(s) => match s {
-				SocketAddr::V4(_) => 8,
-				SocketAddr::V6(_) => 20
+			Self::XRelayed(s) => match s.ip().to_canonical() {
+				IpAddr::V4(_) => 8,
+				IpAddr::V6(_) => 20
 			},
 			Self::Username(s) | Self::Realm(s) |
 			Self::Nonce(s) | Self::Software(s) => s.len() as u16,
