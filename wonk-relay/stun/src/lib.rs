@@ -114,6 +114,19 @@ impl<'i> Stun<'i> {
 			attrs: attrs.into()
 		}
 	}
+	pub fn auth_info(&self) -> Option<(&str, Option<&str>)> {
+		let mut username = None;
+		let mut realm = None;
+		for attr in self.into_iter() {
+			match attr {
+				StunAttr::Username(s) if username.is_none() => username = Some(s),
+				StunAttr::Realm(s) if realm.is_none() => realm = Some(s),
+				StunAttr::Integrity(_) => return username.map(|u| (u, realm)),
+				_ => {}
+			}
+		}
+		None
+	}
 }
 
 pub struct StunIter<'i, 'a> {

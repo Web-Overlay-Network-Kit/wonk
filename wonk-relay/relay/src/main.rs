@@ -1,13 +1,42 @@
 use stun::{Stun, StunAuth, StunType, attr::StunAttr};
 use eyre::Result;
-use std::{net::{UdpSocket, SocketAddr}, collections::HashMap};
+use std::{net::{UdpSocket, SocketAddr}, collections::HashSet, time::{Instant, Duration}, borrow::Borrow, hash::Hash, ops::Add};
+use std::cell::Cell;
+
+#[allow(unused)]
+struct Assoc {
+	addr: SocketAddr,
+	username: String, // TODO: Replace with (<remote id>, <local id>, <token>)
+	ice_username: Cell<Option<String>>,
+	expiration: Cell<Instant>,
+}
+impl Borrow<SocketAddr> for Assoc {
+	fn borrow(&self) -> &SocketAddr {
+		&self.addr
+	}
+}
+impl Hash for Assoc {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.addr.hash(state)
+	}
+}
+impl PartialEq<Assoc> for Assoc {
+	fn eq(&self, other: &Assoc) -> bool {
+		self.addr == other.addr
+	}
+}
+impl Eq for Assoc {}
+
+const REALM: &str = "realm";
+const TURN_PWD: &str = "the/turn/password/constant";
 
 fn main() -> Result<()> {
 	let sock = UdpSocket::bind("[::]:3478")?;
 	let mut buff = [0u8; 4096];
 	let mut out_buff = [0u8; 4096];
 
-	let mut _associations: HashMap<SocketAddr, String> = HashMap::new();
+
+	let mut assocs: HashSet<Assoc> = HashSet::new();
 
 	loop {
 		out_buff.fill(0);
@@ -35,30 +64,76 @@ fn main() -> Result<()> {
 			continue;
 		}
 
+		// Send Indication
+		if let StunType::Ind(0x006) = msg.typ {
+			// TODO:
+			continue;
+		}
+
+		// The rest of the operations require authentication:
+		let Some((username, realm)) = msg.auth_info() else {
+			let attrs = [
+				StunAttr::Error { code: 401, message: "" },
+				StunAttr::Nonce("nonce"), // TODO: Check the nonce elsewhere?
+				StunAttr::Realm(REALM)
+			];
+			let len = msg.err(&attrs).encode(&mut out_buff, StunAuth::NoAuth, true)?;
+			sock.send_to(&out_buff[..len], addr)?;
+			continue;
+		};
+		let auth = StunAuth::Static { username, realm, password: TURN_PWD };
+
 		// TURN Allocate
 		if let StunType::Req(0x003) = msg.typ {
-			let len = if msg.into_iter().all(|a| match a { StunAttr::Integrity(_) => false, _ => true }) {
-				let attrs = [
-					StunAttr::Error { code: 401, message: "".into() },
-					StunAttr::Nonce("nonce".into()),
-					StunAttr::Realm("realm".into())
-				];
-				msg.err(&attrs).encode(&mut out_buff, StunAuth::NoAuth, true)?
-			} else {
-				let username = msg.into_iter().find_map(|a| match a { StunAttr::Username(s) => Some(s), _ => None })
-					.expect("Shouldn't have passed integrity check without a username.");
-				
-				// TODO: Map the socketaddr to the associated username, and if there's already an association, then return an error
+			let allow_alloc = assocs.get(&addr).map(|Assoc { username: exp_username, expiration, .. }|
+				expiration.get() > Instant::now() || exp_username == username
+			).unwrap_or(true);
+			let len = if allow_alloc {
+				let valid_dur = 3600;
 
-				let auth = StunAuth::Static { username, realm: Some("realm"), password: "the/turn/password/constant" };
+				assocs.insert(Assoc { addr, username: username.to_owned(), expiration: Instant::now().add(Duration::from_secs(valid_dur as u64)).into(), ice_username: None.into() });
+
 				let attrs = [
 					StunAttr::XRelayed(addr),
 					StunAttr::XMapped(addr),
-					StunAttr::Lifetime(3600)
+					StunAttr::Lifetime(valid_dur)
 				];
 				msg.res(&attrs).encode(&mut out_buff, auth, true)?
+			} else {
+				let attrs = [
+					StunAttr::Error { code: 437, message: "" }
+				];
+				msg.err(&attrs).encode(&mut out_buff, auth, true)?
 			};
 			sock.send_to(&out_buff[..len], addr)?;
+			continue;
 		}
+
+		// All other messages require an existing association:
+		let Some(assoc) = assocs.get(&addr) else {
+			let attrs = [
+				StunAttr::Error { code: 437, message: "" }
+			];
+			let len = msg.err(&attrs).encode(&mut out_buff, auth, true)?;
+			sock.send_to(&out_buff[..len], addr)?;
+			continue;
+		};
+
+		// TURN Permission:
+		let len = if let StunType::Req(0x008) = msg.typ {
+			msg.res(&[]).encode(&mut out_buff, auth, true)?
+		}
+		// TURN Refresh:
+		else if let StunType::Req(0x004) = msg.typ {
+			let Some(lifetime) = msg.into_iter().find_map(|a| match a { StunAttr::Lifetime(l) => Some(l), _ => None }) else { continue; };
+			if lifetime == 0 {
+				assocs.remove(&addr);
+			} else {
+				assoc.expiration.replace(Instant::now().add(Duration::from_secs(lifetime as u64)));
+			}
+			msg.res(&[]).encode(&mut out_buff, auth, true)?
+		}
+		else { continue; };
+		sock.send_to(&out_buff[..len], addr)?;
 	}
 }
