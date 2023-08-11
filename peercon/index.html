@@ -9,6 +9,27 @@
 	}
 </script>
 <script type="module">
+	import { OwnPeerId, PeerId } from 'wonk-peerid';
+	import { pid } from 'wonk-identity';
+	import { PeerCon, rtc_config, Address } from 'wonk-peercon';
+
+	const other_cert = await RTCPeerConnection.generateCertificate({name: 'ECDSA', namedCurve: 'P-256'});
+	const other_pid = await OwnPeerId.from_cert(other_cert);
+
+	const other_conf = Object.create(rtc_config);
+	other_conf.certificates = [other_cert];
+
+	const token = 'thisisthetesttoken';
+
+	const a = PeerCon.connect_address(new Address(`relayu:${other_pid}:${token}@local.evan-brass.net:3478`));
+	const b = PeerCon.connect_address(new Address(`relayu:${pid}:${token}@local.evan-brass.net:3478`), {config: other_conf, local_id: other_pid})
+	console.log(a);
+	console.log(b);
+
+	a.connected.then(console.log);
+	b.connected.then(console.log);
+</script>
+<script type="_module">
 	import { PeerCon, Address } from 'wonk-peercon';
 	// import { pid } from 'wonk-identity';
 	import { PeerId, advanced_usage } from 'wonk-peerid';
