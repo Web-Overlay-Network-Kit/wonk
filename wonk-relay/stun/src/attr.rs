@@ -61,6 +61,28 @@ impl<'a> Iterator for UnknownAttributesIter<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub enum Data<'i> {
+	Slice(&'i [u8]),
+	Nested(&'i super::Stun<'i>) // We never parse to this variant, it's only useful when encoding.
+}
+impl<'i> Data<'i> {
+	pub fn len(&self) -> u16 {
+		match self {
+			Self::Slice(s) => s.len() as u16,
+			Self::Nested(i) => i.len()
+		}
+	}
+	pub fn encode(&self, buff: &mut [u8]) {
+		match self {
+			Self::Slice(s) => buff.copy_from_slice(s),
+			Self::Nested(i) => {
+				i.encode(buff, crate::StunAuth::NoAuth, false).expect("wat");
+			}
+		}
+	}
+}
+
+#[derive(Debug, Clone)]
 pub enum StunAttr<'i> {
 	// RFC 5389:
 	/* 0x0001 */ Mapped(SocketAddr),
@@ -79,7 +101,7 @@ pub enum StunAttr<'i> {
 	/* 0x000C */ Channel(u32),
 	/* 0x000D */ Lifetime(u32),
 	/* 0x0012 */ XPeer(SocketAddr),
-	/* 0x0013 */ Data(&'i [u8]),
+	/* 0x0013 */ Data(Data<'i>),
 	/* 0x0016 */ XRelayed(SocketAddr),
 	/* 0x0018 */ EvenPort(bool),
 	/* 0x0019 */ RequestedTransport(u8),
@@ -181,7 +203,7 @@ impl<'i> StunAttr<'i> {
 			Self::UnknownAttributes(ua) => ua.len(),
 			Self::Fingerprint(_) | Self::Channel(_) | Self::Lifetime(_) |
 			Self::ReservationToken(_) | Self::Priority(_) => 4,
-			Self::Data(v) => v.len() as u16,
+			Self::Data(v) => v.len(),
 			Self::EvenPort(_) => 1,
 			Self::RequestedTransport(_) => 4,
 			Self::DontFragment | Self::UseCandidate => 0,
@@ -216,7 +238,7 @@ impl<'i> StunAttr<'i> {
 			0x000C => Self::Channel(u32::from_be_bytes(data.try_into()?)),
 			0x000D => Self::Lifetime(u32::from_be_bytes(data.try_into()?)),
 			0x0012 => Self::XPeer(stun_addr_attr(data, xor_bytes)?),
-			0x0013 => Self::Data(data.into()),
+			0x0013 => Self::Data(Data::Slice(data)),
 			0x0016 => Self::XRelayed(stun_addr_attr(data, xor_bytes)?),
 			0x0018 => Self::EvenPort(data.get(0).map(|b| b & 0b10000000 != 0).unwrap_or(true)),
 			0x0019 => Self::RequestedTransport(data.get(0).cloned().ok_or(eyre!("STUN Requested Transport attribute wrong size."))?),
@@ -255,7 +277,8 @@ impl<'i> StunAttr<'i> {
 			Self::UnknownAttributes(ua) => ua.encode(data),
 			Self::Fingerprint(v) | Self::Channel(v) | Self::Lifetime(v) |
 			Self::ReservationToken(v) | Self::Priority(v) => data.copy_from_slice(&v.to_be_bytes()),
-			Self::Data(v) | Self::Other(_, v) => data.copy_from_slice(&v),
+			Self::Other(_, v) => data.copy_from_slice(&v),
+			Self::Data(v) => v.encode(data),
 			Self::EvenPort(b) => data[0] = match b { true => 0b10000000, false => 0},
 			Self::RequestedTransport(protocol) => data[0] = *protocol,
 			Self::DontFragment | Self::UseCandidate => {/* Do Nothing */},

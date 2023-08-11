@@ -8,7 +8,7 @@ use std::{
 	ops::Add,
 	time::{Duration, Instant},
 };
-use stun::{attr::StunAttr, Stun, StunAuth, StunType};
+use stun::{attr::{StunAttr, Data}, Stun, StunAuth, StunType};
 
 #[allow(unused)]
 struct Assoc {
@@ -77,8 +77,8 @@ fn main() -> Result<()> {
 			// Ignore any indications that lack an association
 			(StunType::Ind(_), _, None) => continue,
 			// Data Indications
-			(StunType::Ind(0x006), _, Some(assoc)) => {
-				let Some(data) = msg.into_iter().find_map(|a| match a {
+			(StunType::Ind(0x006), _, Some(_assoc)) => {
+				let Some(Data::Slice(data)) = msg.into_iter().find_map(|a| match a {
 					StunAttr::Data(d) => Some(d), _ => None
 				}) else { continue; };
 				let Some(first_byte) = data.get(0) else { continue; };

@@ -100,6 +100,9 @@ impl<'i, 'a> IntoIterator for &'a Stun<'i> {
 }
 
 impl<'i> Stun<'i> {
+	pub fn len(&self) -> u16 {
+		20 + self.attrs.len()
+	}
 	pub fn res(&self, attrs: &'i [StunAttr<'i>]) -> Self {
 		Self {
 			typ: StunType::Res(self.typ.method()),
