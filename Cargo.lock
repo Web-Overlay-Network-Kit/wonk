@@ -169,7 +169,7 @@ dependencies = [
 [[package]]
 name = "stun-zc"
 version = "0.1.0"
-source = "git+https://github.com/evan-brass/stun-zc#41ba73073d53519e62c9a9529ae3f318b28fad15"
+source = "git+https://github.com/evan-brass/stun-zc#c90b5ab8f3c4693191f8a790d0d75937c51f6ef2"
 dependencies = [
  "crc32fast",
  "hmac",
