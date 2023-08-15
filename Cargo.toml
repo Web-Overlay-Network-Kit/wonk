@@ -1,6 +1,5 @@
 [workspace]
 members = [
+	"wonk-relay",
 	"proxy-rs",
-	"wonk-relay/stun",
-	"wonk-relay/relay"
 ]

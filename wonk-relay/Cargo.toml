@@ -1,11 +1,9 @@
 [package]
-name = "stun"
+name = "relay"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-crc32fast = "1.3.2"
 eyre = "0.6.8"
-hmac = "0.12.1"
+stun-zc = { git = "https://github.com/evan-brass/stun-zc" }
 md5 = "0.7.0"
-sha1 = "0.10.5"

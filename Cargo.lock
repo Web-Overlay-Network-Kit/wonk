@@ -105,9 +105,9 @@ checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 
 [[package]]
 name = "log"
-version = "0.4.19"
+version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b06a4cde4c0f271a446782e3eff8de789548ce57dbc8eca9292c27f4a42004b4"
+checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
 
 [[package]]
 name = "md5"
@@ -151,7 +151,8 @@ name = "relay"
 version = "0.1.0"
 dependencies = [
  "eyre",
- "stun",
+ "md5",
+ "stun-zc",
 ]
 
 [[package]]
@@ -166,13 +167,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "stun"
+name = "stun-zc"
 version = "0.1.0"
+source = "git+https://github.com/evan-brass/stun-zc#41ba73073d53519e62c9a9529ae3f318b28fad15"
 dependencies = [
  "crc32fast",
- "eyre",
  "hmac",
- "md5",
  "sha1",
 ]
 
@@ -184,9 +184,9 @@ checksum = "81cdd64d312baedb58e21336b31bc043b77e01cc99033ce76ef539f78e965ebc"
 
 [[package]]
 name = "syn"
-version = "2.0.27"
+version = "2.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b60f673f44a8255b9c8c657daf66a596d435f2da81a555b06dc644d080ba45e0"
+checksum = "04361975b3f5e348b2189d8dc55bc942f278b2d482a6a0365de5bdd62d351567"
 dependencies = [
  "proc-macro2",
  "quote",
