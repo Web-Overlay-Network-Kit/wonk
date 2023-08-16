@@ -5,7 +5,7 @@ use std::{
 	hash::Hash,
 	net::SocketAddr,
 	ops::Add,
-	time::{Duration, Instant}
+	time::{Duration, Instant},
 };
 
 use eyre::Result;
@@ -26,7 +26,9 @@ fn turn_auth(username: &str, realm: Option<&str>) -> Option<[u8; 16]> {
 }
 #[allow(unused)]
 fn ice_auth(_: &str, realm: Option<&str>) -> Option<&'static [u8]> {
-	if let Some(_) = realm { return None; }
+	if let Some(_) = realm {
+		return None;
+	}
 
 	Some(b"the/ice/password/constant")
 }
@@ -109,7 +111,7 @@ fn main() -> Result<()> {
 				println!("Data {}: {data:?}", assoc.username);
 				continue;
 			}
-			_ => { continue }
+			_ => continue,
 		};
 		if let Some(len) = len {
 			sock.send_to(&send_buff[..len], addr)?;
