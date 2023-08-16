@@ -120,9 +120,9 @@ impl<'i> TurnReq<'i> {
 	}
 }
 
-#[allow(unused)]
 #[derive(Debug, Clone)]
 pub enum TurnRes<'i> {
+	#[allow(unused)]
 	Channel {
 		channel: u16,
 		data: Data<'i>,

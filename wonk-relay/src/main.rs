@@ -1,8 +1,5 @@
 use std::{
-	borrow::Borrow,
-	cell::Cell,
-	collections::HashSet,
-	hash::Hash,
+	collections::HashMap,
 	net::SocketAddr,
 	ops::Add,
 	time::{Duration, Instant},
@@ -11,10 +8,7 @@ use std::{
 use eyre::Result;
 
 mod turn;
-use stun_zc::{
-	attr::{Integrity, StunAttr},
-	StunTyp,
-};
+use stun_zc::attr::Integrity;
 use turn::{TurnReq, TurnRes};
 
 use crate::webrtc::WebRTC;
@@ -31,14 +25,7 @@ fn turn_auth(username: &str, realm: Option<&str>) -> Option<[u8; 16]> {
 
 	Some(hasher.compute().into())
 }
-#[allow(unused)]
-fn ice_auth(_: &str, realm: Option<&str>) -> Option<&'static [u8]> {
-	if let Some(_) = realm {
-		return None;
-	}
-
-	Some(b"the/ice/password/constant")
-}
+const ICE_PWD: &[u8] = b"the/ice/password/constant";
 
 fn swizzle_turn_username(s: &str) -> Option<String> {
 	let (target, rest) = s.split_once(".")?;
@@ -48,27 +35,10 @@ fn swizzle_turn_username(s: &str) -> Option<String> {
 
 #[allow(unused)]
 pub struct Assoc {
-	addr: SocketAddr,
 	username: String,
 	peer_username: String,
-	expires: Cell<Instant>,
-	ice_username: Cell<Option<String>>,
-}
-impl PartialEq for Assoc {
-	fn eq(&self, other: &Self) -> bool {
-		self.addr == other.addr
-	}
-}
-impl Eq for Assoc {}
-impl Borrow<SocketAddr> for Assoc {
-	fn borrow(&self) -> &SocketAddr {
-		&self.addr
-	}
-}
-impl Hash for Assoc {
-	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-		self.addr.hash(state)
-	}
+	expires: Instant,
+	ice_username: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -76,12 +46,12 @@ fn main() -> Result<()> {
 	let mut recv_buff = [0u8; 4096];
 	let mut send_buff = [0u8; 4096];
 
-	let mut assocs: HashSet<Assoc> = HashSet::new();
+	let mut assocs: HashMap<SocketAddr, Assoc> = HashMap::new();
 
 	loop {
 		let (len, addr) = sock.recv_from(&mut recv_buff)?;
 		let Some(msg) = TurnReq::decode(&recv_buff[..len], turn_auth) else { continue; };
-		let assoc = assocs.get(&addr);
+		let assoc = assocs.get_mut(&addr);
 
 		let len = match (msg, assoc) {
 			(TurnReq::Binding { txid }, _) => TurnRes::BindingRes {
@@ -103,7 +73,7 @@ fn main() -> Result<()> {
 					..
 				},
 				Some(assoc),
-			) if assoc.username != username && assoc.expires.get() < Instant::now() => {
+			) if assoc.username != username && assoc.expires < Instant::now() => {
 				TurnRes::AllocateMismatch { txid, key_data }.encode(&mut send_buff)
 			}
 			(
@@ -117,17 +87,20 @@ fn main() -> Result<()> {
 			) => {
 				let username = username.to_owned();
 				let Some(peer_username) = swizzle_turn_username(&username) else { continue; };
+				let peer_username = peer_username.into_boxed_str().into();
 				let lifetime = 3600;
 				let expires = Instant::now()
 					.add(Duration::from_secs(lifetime as u64))
 					.into();
-				assocs.replace(Assoc {
+				assocs.insert(
 					addr,
-					username,
-					peer_username,
-					expires,
-					ice_username: None.into(),
-				});
+					Assoc {
+						username,
+						peer_username,
+						expires,
+						ice_username: None,
+					},
+				);
 				TurnRes::AllocateSuc {
 					txid,
 					key_data,
@@ -158,9 +131,7 @@ fn main() -> Result<()> {
 				Some(assoc),
 			) if username == assoc.username => {
 				let lifetime = lifetime.min(3600);
-				assoc
-					.expires
-					.set(Instant::now().add(Duration::from_secs(lifetime as u64)));
+				assoc.expires = Instant::now().add(Duration::from_secs(lifetime as u64));
 				TurnRes::RefreshSuc {
 					txid,
 					key_data,
@@ -176,42 +147,62 @@ fn main() -> Result<()> {
 			}
 			(TurnReq::Channel { data, .. }, Some(assoc))
 			| (TurnReq::Send { data, .. }, Some(assoc)) => {
-				let webrtc = WebRTC::decode(data);
-				let peer_assoc = assocs.iter().find(|a| assoc.peer_username == a.username);
-
-				let mut scratch: [StunAttr; 6] = std::array::from_fn(|_| StunAttr::Other(0, &[]));
-				match (webrtc, peer_assoc) {
-					(
-						Some(WebRTC::IceReq {
-							txid,
-							integrity,
-							username,
-							priority,
-							ice_controlled,
-							ice_controlling,
-							use_candidate,
-						}),
-						Some(passoc),
-					) => {
-						let len = TurnRes::Data {
-							txid,
-							xpeer: addr,
-							data: WebRTC::IceReq {
-								txid,
-								integrity: Integrity,
-								username: (),
-								priority: (),
-								ice_controlled: (),
-								ice_controlling: (),
-								use_candidate: (),
-							}
-							.encode(&mut scratch),
-						}
-						.encode(&mut send_buff)
-						.unwrap();
-						sock.send_to(&send_buff[..len], passoc.addr)?;
+				let Some(mut webrtc) = WebRTC::decode(data) else { continue; };
+				
+				if let WebRTC::IceReq { username, .. } = webrtc {
+					if let Some((ice_pwd, ice_ufrag)) = username.split_once(":") {
+						assoc
+						.ice_username
+						.get_or_insert_with(|| {
+							let ret = format!("{ice_ufrag}:{ice_pwd}");
+							println!("Setting ice_username: {ret}");
+							ret
+						});
 					}
-					_ => {}
+				}
+				
+				// Trade our mutable reference to assoc for an immutable reference to it:
+				let assoc = assocs.get(&addr).unwrap();
+				
+				// TODO: Randomize our traversal of assocs
+				let Some((paddr, peer_assoc)) = assocs.iter().find(|(_, a)| assoc.peer_username == a.username) else { continue; };
+				let Some(ice_username) = &peer_assoc.ice_username else { continue; };
+				let (_, ice_pwd) = ice_username.split_once(":").unwrap();
+
+				// Fixup the credentials
+				match webrtc {
+					WebRTC::IceReq {
+						ref mut integrity,
+						ref mut username,
+						..
+					} if integrity.verify(ICE_PWD) => {
+						println!("IceReq: cred fixup");
+						*integrity = Integrity::Set {
+							key_data: ice_pwd.as_bytes(),
+						};
+						*username = ice_username;
+					}
+					WebRTC::IceRes {
+						ref mut integrity, ..
+					}
+					| WebRTC::IceErr {
+						ref mut integrity, ..
+					} => {
+						println!("IceRes/Err: cred fixup");
+						*integrity = Integrity::Set { key_data: ICE_PWD };
+					}
+					WebRTC::Rtp(_) => continue, // Don't forward RTP
+					_ => {},
+				};
+				let txid = b"txidtxidtxid"; // TODO: Random?
+				let encoded = webrtc.encode();
+				if let Some(len) = (TurnRes::Data {
+					txid,
+					xpeer: addr,
+					data: (&encoded).into()
+				}
+				.encode(&mut send_buff)) {
+					sock.send_to(&send_buff[..len], paddr)?;
 				}
 				continue;
 			}
