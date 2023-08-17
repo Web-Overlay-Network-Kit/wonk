@@ -191,7 +191,7 @@ a=sctp-port:5000
 		// local_msg waits until ice gathering has completed, which can take a very long time.  We only really need the local ice_pwd which can be ready as soon as setLocalDescription has been called.
 		conn.local_ice_cred.then(({ice_pwd}) => {
 			conn.remote_msg = new SigMsg({
-				id: local_id,
+				id: address.peer_id,
 				ice_ufrag: ice_pwd,
 				ice_pwd: address.ice_pwd,
 				ice_candidates: gen_candidate()

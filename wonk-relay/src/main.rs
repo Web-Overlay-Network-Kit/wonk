@@ -148,6 +148,7 @@ fn main() -> Result<()> {
 			(TurnReq::Channel { data, .. }, Some(assoc))
 			| (TurnReq::Send { data, .. }, Some(assoc)) => {
 				let Some(mut webrtc) = WebRTC::decode(data) else { continue; };
+				println!("{addr}: {webrtc:#?}");
 				
 				if let WebRTC::IceReq { username, .. } = webrtc {
 					if let Some((ice_pwd, ice_ufrag)) = username.split_once(":") {
@@ -165,44 +166,45 @@ fn main() -> Result<()> {
 				let assoc = assocs.get(&addr).unwrap();
 				
 				// TODO: Randomize our traversal of assocs
-				let Some((paddr, peer_assoc)) = assocs.iter().find(|(_, a)| assoc.peer_username == a.username) else { continue; };
-				let Some(ice_username) = &peer_assoc.ice_username else { continue; };
-				let (_, ice_pwd) = ice_username.split_once(":").unwrap();
+				for (paddr, peer_assoc) in assocs.iter() {
+					if assoc.peer_username != peer_assoc.username { continue; }
+					if peer_assoc.expires < Instant::now() { continue; }
+					let Some(ice_username) = &peer_assoc.ice_username else { continue; };
+					let (_, ice_pwd) = ice_username.split_once(":").unwrap();
 
-				// Fixup the credentials
-				match webrtc {
-					WebRTC::IceReq {
-						ref mut integrity,
-						ref mut username,
-						..
-					} if integrity.verify(ICE_PWD) => {
-						println!("IceReq: cred fixup");
-						*integrity = Integrity::Set {
-							key_data: ice_pwd.as_bytes(),
-						};
-						*username = ice_username;
+					// Fixup the credentials
+					match webrtc {
+						WebRTC::IceReq {
+							ref mut integrity,
+							ref mut username,
+							..
+						} if integrity.verify(ICE_PWD) => {
+							*integrity = Integrity::Set {
+								key_data: ice_pwd.as_bytes(),
+							};
+							*username = ice_username;
+						}
+						WebRTC::IceRes {
+							ref mut integrity, ..
+						}
+						| WebRTC::IceErr {
+							ref mut integrity, ..
+						} => {
+							*integrity = Integrity::Set { key_data: ICE_PWD };
+						}
+						WebRTC::Rtp(_) => continue, // Don't forward RTP
+						_ => {},
+					};
+					let txid = b"txidtxidtxid"; // TODO: Random?
+					let encoded = webrtc.encode();
+					if let Some(len) = (TurnRes::Data {
+						txid,
+						xpeer: addr,
+						data: (&encoded).into()
 					}
-					WebRTC::IceRes {
-						ref mut integrity, ..
+					.encode(&mut send_buff)) {
+						sock.send_to(&send_buff[..len], paddr)?;
 					}
-					| WebRTC::IceErr {
-						ref mut integrity, ..
-					} => {
-						println!("IceRes/Err: cred fixup");
-						*integrity = Integrity::Set { key_data: ICE_PWD };
-					}
-					WebRTC::Rtp(_) => continue, // Don't forward RTP
-					_ => {},
-				};
-				let txid = b"txidtxidtxid"; // TODO: Random?
-				let encoded = webrtc.encode();
-				if let Some(len) = (TurnRes::Data {
-					txid,
-					xpeer: addr,
-					data: (&encoded).into()
-				}
-				.encode(&mut send_buff)) {
-					sock.send_to(&send_buff[..len], paddr)?;
 				}
 				continue;
 			}
