@@ -152,6 +152,9 @@ export class PeerCon extends RTCPeerConnection {
 		this.peer_id = r_msg.id;
 
 		const polite = this.#local_id.polite(this.peer_id);
+		
+		// Spawn the perfect negotiation handler:
+		this.perfect(polite);
 
 		// Set the remote description:
 		let sdp = `v=0
@@ -170,11 +173,60 @@ a=sctp-port:5000
 		for (const candidate of r_msg.ice_candidates) {
 			await this.addIceCandidate(candidate);
 		}
+	}
+	// The perfect negotiation pattern, signalled over the 0 datachannel:
+	perfect(polite) {
+		let making_offer = false;
+		let ignore_offer = false;
+		this.addEventListener('negotiationneeded', async () => {
+			await this.connected;
+			try {
+				making_offer = true;
+				await this.setLocalDescription();
+				this.#dc.send(JSON.stringify({
+					description: this.localDescription
+				}));
+			} catch (e) {
+				console.error(e);
+			} finally {
+				making_offer = false;
+			}
+		});
+		this.addEventListener('icecandidate', async ({ candidate }) => {
+			await this.connected;
+			this.#dc.send(JSON.stringify({ candidate }));
+		});
+		this.#dc.addEventListener('message', async ({ data }) => {
+			if (typeof data != 'string') return;
+			let msg;
+			try { msg = JSON.parse(data); } catch { return; };
+			if (typeof msg != 'object') return;
+			const { description, candidate } = msg ?? {};
+			try {
+				if (description) {
+					const offer_collision = description.type === 'offer' &&
+					(making_offer || this.signalingState != 'stable');
 
-		await this.connected;
+					ignore_offer = !polite && offer_collision;
+					if (ignore_offer) return;
 
-		// Switch to using the Perfect negotiation pattern for future renegotiation:
-		// TODO:
+					await this.setRemoteDescription(description);
+					if (description.type == 'offer') {
+						await this.setLocalDescription();
+						this.#dc.send(JSON.stringify({ description: this.localDescription }));
+					}
+				}
+				if (candidate) {
+					try {
+						await this.addIceCandidate(candidate);
+					} catch (e) {
+						if (!ignore_offer) throw e;
+					}
+				}
+			} catch (e) {
+				console.error(e);
+			}
+		});
 	}
 	static connect_address(address, {
 		local_id = pid,
