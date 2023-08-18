@@ -10,7 +10,7 @@ use eyre::Result;
 
 mod turn;
 use stun_zc::attr::Integrity;
-use turn::{TurnReq, TurnRes};
+use turn::{TurnReq, TurnRes, TurnUsername};
 
 use crate::webrtc::WebRTC;
 mod webrtc;
@@ -28,20 +28,13 @@ fn turn_auth(username: &str, realm: Option<&str>) -> Option<[u8; 16]> {
 }
 const ICE_PWD: &[u8] = b"the/ice/password/constant";
 
-fn swizzle_turn_username(s: &str) -> Option<String> {
-	let (target, rest) = s.split_once(".")?;
-	let (origin, token) = rest.split_once(".")?;
-	Some(format!("{origin}.{target}.{token}"))
-}
-
 // Kicking criteria: (Kicking is a good thing, by causing connection tests to fail through the relay, the browser is prompted to try alternative ICE candidate pairs which will hopefully result in a direct connection between the peers)
 const KICK_DUR: Duration = Duration::from_secs(2 * 60);
 const KICK_BYTES: usize = 1024 * 10;
 
 #[allow(unused)]
 pub struct Assoc {
-	username: String,
-	peer_username: String,
+	username: TurnUsername,
 	expires: Instant,
 	ice_username: Option<String>,
 	kick_time: Cell<Instant>,
@@ -80,7 +73,7 @@ fn main() -> Result<()> {
 					..
 				},
 				Some(assoc),
-			) if assoc.username != username && assoc.expires < Instant::now() => {
+			) if assoc.username.as_ref() != username && assoc.expires < Instant::now() => {
 				TurnRes::AllocateMismatch { txid, key_data }.encode(&mut send_buff)
 			}
 			(
@@ -92,20 +85,17 @@ fn main() -> Result<()> {
 				},
 				_,
 			) => {
-				let username = username.to_owned();
-				let Some(peer_username) = swizzle_turn_username(&username) else { continue; };
-				let peer_username = peer_username.into_boxed_str().into();
+				let username = username.try_into()?;
 				let lifetime = 3600;
 				let expires = Instant::now()
 					.add(Duration::from_secs(lifetime as u64))
 					.into();
 				let kick_time = Instant::now().add(KICK_DUR).into();
-				println!("{addr} {username}");
+				println!("{addr} {username:?}");
 				assocs.insert(
 					addr,
 					Assoc {
 						username,
-						peer_username,
 						expires,
 						ice_username: None,
 						kick_time,
@@ -128,7 +118,7 @@ fn main() -> Result<()> {
 					..
 				},
 				Some(assoc),
-			) if username == assoc.username => {
+			) if username == assoc.username.as_ref() => {
 				assocs.remove(&addr);
 				continue;
 			}
@@ -140,7 +130,7 @@ fn main() -> Result<()> {
 					lifetime,
 				},
 				Some(assoc),
-			) if username == assoc.username => {
+			) if username == assoc.username.as_ref() => {
 				let lifetime = lifetime.min(3600);
 				assoc.expires = Instant::now().add(Duration::from_secs(lifetime as u64));
 				TurnRes::RefreshSuc {
@@ -176,7 +166,9 @@ fn main() -> Result<()> {
 				
 				// TODO: Randomize our traversal of assocs
 				for (paddr, peer_assoc) in assocs.iter() {
-					if assoc.peer_username != peer_assoc.username { continue; }
+					if assoc.username.dst() != peer_assoc.username.src() { continue; }
+					if assoc.username.src() != peer_assoc.username.dst() { continue; }
+					if assoc.username.token() != peer_assoc.username.token() { continue; }
 					if peer_assoc.expires < Instant::now() { continue; }
 					let Some(ice_username) = peer_assoc.ice_username.as_ref() else { continue; };
 					let (_, ice_pwd) = ice_username.split_once(":").unwrap();

@@ -1,3 +1,4 @@
+use eyre::eyre;
 use std::net::SocketAddr;
 
 use stun_zc::{
@@ -5,6 +6,49 @@ use stun_zc::{
 	attrs::StunAttrs,
 	Stun, StunTyp,
 };
+
+#[derive(Debug, Clone)]
+pub struct TurnUsername {
+	full: Box<str>,
+	len_1: usize,
+	len_2: usize,
+	len_3: usize
+}
+impl TurnUsername {
+	pub fn dst(&self) -> &str {
+		&self.full[0..self.len_1]
+	}
+	pub fn src(&self) -> &str {
+		&self.full[self.len_1 + 1..][..self.len_2]
+	}
+	pub fn token(&self) -> &str {
+		&self.full[self.len_1 + 1 + self.len_2 + 1..][..self.len_3]
+	}
+}
+impl TryFrom<&str> for TurnUsername {
+	type Error = eyre::Report;
+	fn try_from(value: &str) -> Result<Self, Self::Error> {
+		let mut split = value.split(".");
+		let dst = split.next().ok_or(eyre!("too short"))?;
+		let src = split.next().ok_or(eyre!("too short"))?;
+		let token = split.next().ok_or(eyre!("too short"))?;
+		if dst.is_empty() || src.is_empty() || token.is_empty() {
+			Err(eyre!("too empty"))
+		} else {
+			Ok(Self {
+				full: value.to_string().into_boxed_str(),
+				len_1: dst.len(),
+				len_2: src.len(),
+				len_3: token.len(),
+			})
+		}
+	}
+}
+impl AsRef<str> for TurnUsername {
+	fn as_ref(&self) -> &str {
+		&self.full
+	}
+}
 
 #[derive(Debug, Clone)]
 pub enum TurnReq<'i> {
