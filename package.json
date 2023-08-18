@@ -3,10 +3,6 @@
 	"workspaces": [
 		"./peerid",
 		"./identity",
-		"./peercon",
-		"./mbedtls",
-		"./net",
-		"./dc-proxy",
-		"./proxy-rs/pkg"
+		"./peercon"
 	]
 }

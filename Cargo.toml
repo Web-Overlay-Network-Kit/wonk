@@ -1,5 +1,4 @@
 [workspace]
 members = [
 	"wonk-relay",
-	"proxy-rs",
 ]

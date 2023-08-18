@@ -100,6 +100,7 @@ fn main() -> Result<()> {
 					.add(Duration::from_secs(lifetime as u64))
 					.into();
 				let kick_time = Instant::now().add(KICK_DUR).into();
+				println!("{addr} {username}");
 				assocs.insert(
 					addr,
 					Assoc {
@@ -165,7 +166,6 @@ fn main() -> Result<()> {
 						.ice_username
 						.get_or_insert_with(|| {
 							let ret = format!("{ice_ufrag}:{ice_pwd}");
-							println!("Setting ice_username: {ret}");
 							ret
 						});
 					}
