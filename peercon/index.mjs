@@ -154,7 +154,7 @@ export class PeerCon extends RTCPeerConnection {
 		const polite = this.#local_id.polite(this.peer_id);
 		
 		// Spawn the perfect negotiation handler:
-		this.perfect(polite);
+		this.connected.then(() => this.perfect(polite));
 
 		// Set the remote description:
 		let sdp = `v=0
@@ -176,10 +176,15 @@ a=sctp-port:5000
 	}
 	// The perfect negotiation pattern, signalled over the 0 datachannel:
 	perfect(polite) {
+		this.addEventListener('iceconnectionstatechange', () => {
+			if (this.iceConnectionState == 'disconnected') {
+				this.restartIce();
+			}
+		});
+
 		let making_offer = false;
 		let ignore_offer = false;
 		this.addEventListener('negotiationneeded', async () => {
-			await this.connected;
 			try {
 				making_offer = true;
 				await this.setLocalDescription();
@@ -193,7 +198,6 @@ a=sctp-port:5000
 			}
 		});
 		this.addEventListener('icecandidate', async ({ candidate }) => {
-			await this.connected;
 			this.#dc.send(JSON.stringify({ candidate }));
 		});
 		this.#dc.addEventListener('message', async ({ data }) => {

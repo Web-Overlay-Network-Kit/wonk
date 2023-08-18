@@ -3,6 +3,7 @@ use std::{
 	net::SocketAddr,
 	ops::Add,
 	time::{Duration, Instant},
+	cell::Cell
 };
 
 use eyre::Result;
@@ -33,12 +34,18 @@ fn swizzle_turn_username(s: &str) -> Option<String> {
 	Some(format!("{origin}.{target}.{token}"))
 }
 
+// Kicking criteria: (Kicking is a good thing, by causing connection tests to fail through the relay, the browser is prompted to try alternative ICE candidate pairs which will hopefully result in a direct connection between the peers)
+const KICK_DUR: Duration = Duration::from_secs(2 * 60);
+const KICK_BYTES: usize = 1024 * 10;
+
 #[allow(unused)]
 pub struct Assoc {
 	username: String,
 	peer_username: String,
 	expires: Instant,
 	ice_username: Option<String>,
+	kick_time: Cell<Instant>,
+	kick_bytes: Cell<usize>
 }
 
 fn main() -> Result<()> {
@@ -92,6 +99,7 @@ fn main() -> Result<()> {
 				let expires = Instant::now()
 					.add(Duration::from_secs(lifetime as u64))
 					.into();
+				let kick_time = Instant::now().add(KICK_DUR).into();
 				assocs.insert(
 					addr,
 					Assoc {
@@ -99,6 +107,8 @@ fn main() -> Result<()> {
 						peer_username,
 						expires,
 						ice_username: None,
+						kick_time,
+						kick_bytes: 0.into()
 					},
 				);
 				TurnRes::AllocateSuc {
@@ -148,7 +158,6 @@ fn main() -> Result<()> {
 			(TurnReq::Channel { data, .. }, Some(assoc))
 			| (TurnReq::Send { data, .. }, Some(assoc)) => {
 				let Some(mut webrtc) = WebRTC::decode(data) else { continue; };
-				println!("{addr}: {webrtc:#?}");
 				
 				if let WebRTC::IceReq { username, .. } = webrtc {
 					if let Some((ice_pwd, ice_ufrag)) = username.split_once(":") {
@@ -169,16 +178,22 @@ fn main() -> Result<()> {
 				for (paddr, peer_assoc) in assocs.iter() {
 					if assoc.peer_username != peer_assoc.username { continue; }
 					if peer_assoc.expires < Instant::now() { continue; }
-					let Some(ice_username) = &peer_assoc.ice_username else { continue; };
+					let Some(ice_username) = peer_assoc.ice_username.as_ref() else { continue; };
 					let (_, ice_pwd) = ice_username.split_once(":").unwrap();
+					
+					if assoc.kick_time.get() < Instant::now() || assoc.kick_bytes.get() > KICK_BYTES || peer_assoc.kick_time.get() < Instant::now() || peer_assoc.kick_bytes.get() > KICK_BYTES {
+						continue;
+					}
 
 					// Fixup the credentials
 					match webrtc {
 						WebRTC::IceReq {
 							ref mut integrity,
 							ref mut username,
+							ref mut priority,
 							..
 						} if integrity.verify(ICE_PWD) => {
+							*priority = 1;
 							*integrity = Integrity::Set {
 								key_data: ice_pwd.as_bytes(),
 							};
@@ -203,6 +218,7 @@ fn main() -> Result<()> {
 						data: (&encoded).into()
 					}
 					.encode(&mut send_buff)) {
+						assoc.kick_bytes.set(assoc.kick_bytes.get() + len);
 						sock.send_to(&send_buff[..len], paddr)?;
 					}
 				}
