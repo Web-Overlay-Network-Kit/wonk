@@ -1,9 +1,8 @@
 use std::{
-	collections::HashMap,
+	collections::{HashMap, HashSet},
 	net::SocketAddr,
 	ops::Add,
-	time::{Duration, Instant},
-	cell::Cell
+	time::{Duration, Instant}
 };
 
 use eyre::Result;
@@ -28,25 +27,23 @@ fn turn_auth(username: &str, realm: Option<&str>) -> Option<[u8; 16]> {
 }
 const ICE_PWD: &[u8] = b"the/ice/password/constant";
 
-// Kicking criteria: (Kicking is a good thing, by causing connection tests to fail through the relay, the browser is prompted to try alternative ICE candidate pairs which will hopefully result in a direct connection between the peers)
-const KICK_DUR: Duration = Duration::from_secs(2 * 60);
-const KICK_BYTES: usize = 1024 * 10;
-
 #[allow(unused)]
 pub struct Assoc {
 	username: TurnUsername,
 	expires: Instant,
-	ice_username: Option<String>,
-	kick_time: Cell<Instant>,
-	kick_bytes: Cell<usize>
+	ice_username: Option<String>
 }
 
-fn main() -> Result<()> {
+const TURN_LIFETIME_SEC: u32 = 60;
+
+#[tokio::main]
+async fn main() -> Result<()> {
 	let sock = std::net::UdpSocket::bind("[::]:3478")?;
 	let mut recv_buff = [0u8; 4096];
 	let mut send_buff = [0u8; 4096];
 
 	let mut assocs: HashMap<SocketAddr, Assoc> = HashMap::new();
+	let hosted: HashSet<String> = HashSet::new();
 
 	loop {
 		let (len, addr) = sock.recv_from(&mut recv_buff)?;
@@ -86,20 +83,17 @@ fn main() -> Result<()> {
 				_,
 			) => {
 				let username = username.try_into()?;
-				let lifetime = 3600;
+				let lifetime = TURN_LIFETIME_SEC;
 				let expires = Instant::now()
 					.add(Duration::from_secs(lifetime as u64))
 					.into();
-				let kick_time = Instant::now().add(KICK_DUR).into();
 				println!("{addr} {username:?}");
 				assocs.insert(
 					addr,
 					Assoc {
 						username,
 						expires,
-						ice_username: None,
-						kick_time,
-						kick_bytes: 0.into()
+						ice_username: None
 					},
 				);
 				TurnRes::AllocateSuc {
@@ -131,14 +125,18 @@ fn main() -> Result<()> {
 				},
 				Some(assoc),
 			) if username == assoc.username.as_ref() => {
-				let lifetime = lifetime.min(3600);
-				assoc.expires = Instant::now().add(Duration::from_secs(lifetime as u64));
-				TurnRes::RefreshSuc {
-					txid,
-					key_data,
-					lifetime,
-				}
-				.encode(&mut send_buff)
+				if hosted.contains(assoc.username.dst()) || hosted.contains(assoc.username.src()) {
+					let lifetime = lifetime.min(TURN_LIFETIME_SEC);
+					assoc.expires = Instant::now().add(Duration::from_secs(lifetime as u64));
+					TurnRes::RefreshSuc {
+						txid,
+						key_data,
+						lifetime,
+					}
+				} else {
+					// Kick anything that's not in the hosted
+					TurnRes::RefreshKick { txid, key_data }
+				}.encode(&mut send_buff)
 			}
 			(TurnReq::Permission { txid, key_data, .. }, Some(_)) => {
 				TurnRes::PermissionSuc { txid, key_data }.encode(&mut send_buff)
@@ -172,10 +170,6 @@ fn main() -> Result<()> {
 					if peer_assoc.expires < Instant::now() { continue; }
 					let Some(ice_username) = peer_assoc.ice_username.as_ref() else { continue; };
 					let (_, ice_pwd) = ice_username.split_once(":").unwrap();
-					
-					if assoc.kick_time.get() < Instant::now() || assoc.kick_bytes.get() > KICK_BYTES || peer_assoc.kick_time.get() < Instant::now() || peer_assoc.kick_bytes.get() > KICK_BYTES {
-						continue;
-					}
 
 					// Fixup the credentials
 					match webrtc {
@@ -210,7 +204,6 @@ fn main() -> Result<()> {
 						data: (&encoded).into()
 					}
 					.encode(&mut send_buff)) {
-						assoc.kick_bytes.set(assoc.kick_bytes.get() + len);
 						sock.send_to(&send_buff[..len], paddr)?;
 					}
 				}

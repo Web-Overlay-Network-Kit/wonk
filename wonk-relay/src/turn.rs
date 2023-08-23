@@ -140,7 +140,7 @@ impl<'i> TurnReq<'i> {
 						txid,
 						username,
 						key_data,
-						lifetime: flat.lifetime?,
+						lifetime: flat.lifetime.unwrap_or(3600),
 					},
 					(StunTyp::Req(0x009), Some((username, key_data))) => Self::BindChannel {
 						txid,
@@ -204,6 +204,10 @@ pub enum TurnRes<'i> {
 		txid: &'i [u8; 12],
 		key_data: [u8; 16],
 		lifetime: u32,
+	},
+	RefreshKick {
+		txid: &'i [u8; 12],
+		key_data: [u8; 16]
 	},
 	BindChannelSuc {
 		txid: &'i [u8; 12],
@@ -340,6 +344,24 @@ impl<'i> TurnRes<'i> {
 				];
 				Stun {
 					typ: StunTyp::Res(0x004),
+					txid,
+					attrs: StunAttrs::List(&attrs),
+				}
+				.encode(buff)
+			}
+			Self::RefreshKick {
+				txid,
+				key_data
+			} => {
+				let attrs = [
+					StunAttr::Error(Error { code: 500, message: "Get kicked!" }),
+					StunAttr::Integrity(stun_zc::attr::Integrity::Set {
+						key_data: &key_data,
+					}),
+					StunAttr::Fingerprint,
+				];
+				Stun {
+					typ: StunTyp::Err(0x004),
 					txid,
 					attrs: StunAttrs::List(&attrs),
 				}

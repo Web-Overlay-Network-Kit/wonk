@@ -7,3 +7,5 @@ edition = "2021"
 eyre = "0.6.8"
 stun-zc = { git = "https://github.com/evan-brass/stun-zc" }
 md5 = "0.7.0"
+tokio = { version = "1.32.0", features = ["full"] }
+rand = "0.8.5"
