@@ -177,7 +177,7 @@ a=sctp-port:5000
 	// The perfect negotiation pattern, signalled over the 0 datachannel:
 	perfect(polite) {
 		this.addEventListener('iceconnectionstatechange', () => {
-			if (this.iceConnectionState == 'disconnected') {
+			if (this.iceConnectionState == 'disconnected' && !polite) {
 				this.restartIce();
 			}
 		});
