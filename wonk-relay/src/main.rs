@@ -199,7 +199,7 @@ async fn main() -> Result<()> {
 					let txid = b"txidtxidtxid"; // TODO: Random?
 					let encoded = webrtc.encode();
 					if let Some(len) = (TurnRes::Data {
-						txid,
+						txid: txid.clone(),
 						xpeer: addr,
 						data: (&encoded).into()
 					}

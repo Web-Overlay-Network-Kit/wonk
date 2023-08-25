@@ -57,37 +57,37 @@ pub enum TurnReq<'i> {
 		data: &'i [u8],
 	},
 	Send {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		xpeer: SocketAddr,
 		data: &'i [u8],
 	},
 	Binding {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 	},
 	AllocateNoAuth {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 	},
 	Allocate {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		username: &'i str,
 		key_data: [u8; 16],
 		requested_transport: u8,
 		// dont_fragment, even_port, reservation_token
 	},
 	Permission {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		username: &'i str,
 		key_data: [u8; 16],
 		xpeer: SocketAddr,
 	},
 	Refresh {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		username: &'i str,
 		key_data: [u8; 16],
 		lifetime: u32,
 	},
 	BindChannel {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		username: &'i str,
 		key_data: [u8; 16],
 		channel: u16,
@@ -172,45 +172,45 @@ pub enum TurnRes<'i> {
 		data: Data<'i>,
 	},
 	Data {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		xpeer: SocketAddr,
 		data: Data<'i>,
 	},
 	BindingRes {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		xmapped: SocketAddr,
 	},
 	AllocateUseAuth {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		realm: &'i str,
 		nonce: &'i str,
 	},
 	AllocateSuc {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		key_data: [u8; 16],
 		xmapped: SocketAddr,
 		xrelayed: SocketAddr,
 		lifetime: u32,
 	},
 	AllocateMismatch {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		key_data: [u8; 16],
 	},
 	PermissionSuc {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		key_data: [u8; 16],
 	},
 	RefreshSuc {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		key_data: [u8; 16],
 		lifetime: u32,
 	},
 	RefreshKick {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		key_data: [u8; 16]
 	},
 	BindChannelSuc {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		key_data: [u8; 16],
 	},
 }

@@ -9,7 +9,7 @@ use stun_zc::{
 #[derive(Debug, Clone)]
 pub enum WebRTC<'i> {
 	IceReq {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		integrity: Integrity<'i>,
 		username: &'i str,
 
@@ -19,12 +19,12 @@ pub enum WebRTC<'i> {
 		use_candidate: bool,
 	},
 	IceRes {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		xmapped: SocketAddr,
 		integrity: Integrity<'i>,
 	},
 	IceErr {
-		txid: &'i [u8; 12],
+		txid: [u8; 12],
 		integrity: Integrity<'i>,
 		error: Error<'i>,
 	},
@@ -88,7 +88,7 @@ impl<'i> WebRTC<'i> {
 				};
 				let typ = StunTyp::Req(0x001);
 				if *use_candidate {
-					WebRTCEncoded::Stun6(typ, txid, [
+					WebRTCEncoded::Stun6(typ, txid.clone(), [
 						StunAttr::Username(username),
 						ice_cont,
 						StunAttr::UseCandidate,
@@ -97,7 +97,7 @@ impl<'i> WebRTC<'i> {
 						StunAttr::Fingerprint
 					])
 				} else {
-					WebRTCEncoded::Stun5(typ, txid, [
+					WebRTCEncoded::Stun5(typ, txid.clone(), [
 						StunAttr::Username(username),
 						ice_cont,
 						StunAttr::Priority(*priority),
@@ -111,7 +111,7 @@ impl<'i> WebRTC<'i> {
 				xmapped,
 				integrity,
 			} => {
-				WebRTCEncoded::Stun3(StunTyp::Res(0x001), txid, [
+				WebRTCEncoded::Stun3(StunTyp::Res(0x001), txid.clone(), [
 					StunAttr::XMapped(*xmapped),
 					StunAttr::Integrity(integrity.clone()),
 					StunAttr::Fingerprint
@@ -122,7 +122,7 @@ impl<'i> WebRTC<'i> {
 				integrity,
 				error,
 			} => {
-				WebRTCEncoded::Stun3(StunTyp::Err(0x001), txid, [
+				WebRTCEncoded::Stun3(StunTyp::Err(0x001), txid.clone(), [
 					StunAttr::Error(error.clone()),
 					StunAttr::Integrity(integrity.clone()),
 					StunAttr::Fingerprint
@@ -134,22 +134,22 @@ impl<'i> WebRTC<'i> {
 
 pub enum WebRTCEncoded<'i> {
 	Slice(&'i [u8]),
-	Stun3(StunTyp, &'i [u8; 12], [StunAttr<'i>; 3]),
-	Stun5(StunTyp, &'i [u8; 12], [StunAttr<'i>; 5]),
-	Stun6(StunTyp, &'i [u8; 12], [StunAttr<'i>; 6]),
+	Stun3(StunTyp, [u8; 12], [StunAttr<'i>; 3]),
+	Stun5(StunTyp, [u8; 12], [StunAttr<'i>; 5]),
+	Stun6(StunTyp, [u8; 12], [StunAttr<'i>; 6]),
 }
 impl<'i> From<&'i WebRTCEncoded<'i>> for Data<'i> {
 	fn from(value: &'i WebRTCEncoded<'i>) -> Self {
 		match value {
 			WebRTCEncoded::Slice(s) => Self::Slice(s),
 			WebRTCEncoded::Stun3(typ, txid, attrs) => Self::Nested(Stun {
-				typ: typ.clone(), txid, attrs: StunAttrs::List(attrs)
+				typ: typ.clone(), txid: txid.clone(), attrs: StunAttrs::List(attrs)
 			}),
 			WebRTCEncoded::Stun5(typ, txid, attrs) => Self::Nested(Stun {
-				typ: typ.clone(), txid, attrs: StunAttrs::List(attrs)
+				typ: typ.clone(), txid: txid.clone(), attrs: StunAttrs::List(attrs)
 			}),
 			WebRTCEncoded::Stun6(typ, txid, attrs) => Self::Nested(Stun {
-				typ: typ.clone(), txid, attrs: StunAttrs::List(attrs)
+				typ: typ.clone(), txid: txid.clone(), attrs: StunAttrs::List(attrs)
 			}),
 		}
 	}

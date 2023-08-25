@@ -398,8 +398,8 @@ dependencies = [
 [[package]]
 name = "stun-zc"
 version = "0.1.0"
-source = "git+https://github.com/evan-brass/stun-zc#c9db56285f413ff1cb7a258909ad4428e7c60007"
 dependencies = [
+ "bytes",
  "crc32fast",
  "hmac",
  "sha1",
