@@ -18,7 +18,7 @@ import { PeerId, b64url } from 'wonk-peerid';
  *   - ICE ufrag: OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio (same as peerid)
  *   - ICE pwd: this/is/ice/password (if not set, then the/ice/password/constant)
  * 
- * web3:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio/p2p-chat
+ * web+kad:OW-4EPSfaEAJ8eljpvKOVW_gqJPUwV5-K2G0ulT1Qio/p2p-chat
  * - Connect via auto discovery
  * - Create a datachannel on that connection to the p2p-chat service
  */
@@ -34,13 +34,13 @@ const proto_turn = {
 	relayu: 'turn'
 };
 const proto_search = {
-	relayt: '',
-	relayl: '',
+	relayt: '?transport=tcp',
+	relayl: '?transport=tcp',
 	relayu: '?transport=udp'
 };
 const proto_ports = {
-	relayt: 80,
-	relayl: 443,
+	relayt: 3478,
+	relayl: 5349,
 	relayu: 3478
 };
 
@@ -78,7 +78,7 @@ export class Address {
 		this.#b.username = String(peer_id);
 	}
 	get urls() {
-		return [`${proto_turn[this.protocol]}:${this.host}${proto_search[this.protocol]}`];
+		return [`${proto_turn[this.protocol]}:${this.hostname}:${this.port}${proto_search[this.protocol]}`];
 	}
 	get hostname() {
 		return this.inner.hostname;
