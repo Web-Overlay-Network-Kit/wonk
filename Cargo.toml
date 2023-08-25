@@ -1,4 +1,5 @@
 [workspace]
 members = [
-	"wonk-relay",
+	"relay",
+	"stun"
 ]

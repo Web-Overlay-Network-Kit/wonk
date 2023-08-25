@@ -8,7 +8,7 @@ use std::{
 use eyre::Result;
 
 mod turn;
-use stun_zc::attr::Integrity;
+use stun::attr::Integrity;
 use turn::{TurnReq, TurnRes, TurnUsername};
 
 use crate::webrtc::WebRTC;

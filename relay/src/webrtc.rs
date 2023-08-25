@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use stun_zc::{
+use stun::{
 	attr::{Data, Error, Integrity, StunAttr},
 	attrs::StunAttrs,
 	Stun, StunTyp,

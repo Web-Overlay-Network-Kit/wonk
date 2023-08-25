@@ -343,7 +343,7 @@ dependencies = [
  "eyre",
  "md5",
  "rand",
- "stun-zc",
+ "stun",
  "tokio",
 ]
 
@@ -396,7 +396,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "stun-zc"
+name = "stun"
 version = "0.1.0"
 dependencies = [
  "bytes",

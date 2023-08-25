@@ -1,5 +1,5 @@
 [package]
-name = "stun-zc"
+name = "stun"
 version = "0.1.0"
 edition = "2021"
 

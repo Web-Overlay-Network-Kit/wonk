@@ -1,7 +1,7 @@
 use eyre::eyre;
 use std::net::SocketAddr;
 
-use stun_zc::{
+use stun::{
 	attr::{AttrContext, Data, Error, StunAttr, StunAttrValue},
 	attrs::StunAttrs,
 	Stun, StunTyp,
@@ -286,7 +286,7 @@ impl<'i> TurnRes<'i> {
 					StunAttr::XMapped(xmapped),
 					StunAttr::XRelayed(xrelayed),
 					StunAttr::Lifetime(lifetime),
-					StunAttr::Integrity(stun_zc::attr::Integrity::Set {
+					StunAttr::Integrity(stun::attr::Integrity::Set {
 						key_data: &key_data,
 					}),
 					StunAttr::Fingerprint,
@@ -304,7 +304,7 @@ impl<'i> TurnRes<'i> {
 						code: 437,
 						message: "",
 					}),
-					StunAttr::Integrity(stun_zc::attr::Integrity::Set {
+					StunAttr::Integrity(stun::attr::Integrity::Set {
 						key_data: &key_data,
 					}),
 					StunAttr::Fingerprint,
@@ -318,7 +318,7 @@ impl<'i> TurnRes<'i> {
 			}
 			Self::PermissionSuc { txid, key_data } => {
 				let attrs = [
-					StunAttr::Integrity(stun_zc::attr::Integrity::Set {
+					StunAttr::Integrity(stun::attr::Integrity::Set {
 						key_data: &key_data,
 					}),
 					StunAttr::Fingerprint,
@@ -337,7 +337,7 @@ impl<'i> TurnRes<'i> {
 			} => {
 				let attrs = [
 					StunAttr::Lifetime(lifetime),
-					StunAttr::Integrity(stun_zc::attr::Integrity::Set {
+					StunAttr::Integrity(stun::attr::Integrity::Set {
 						key_data: &key_data,
 					}),
 					StunAttr::Fingerprint,
@@ -355,7 +355,7 @@ impl<'i> TurnRes<'i> {
 			} => {
 				let attrs = [
 					StunAttr::Error(Error { code: 500, message: "Get kicked!" }),
-					StunAttr::Integrity(stun_zc::attr::Integrity::Set {
+					StunAttr::Integrity(stun::attr::Integrity::Set {
 						key_data: &key_data,
 					}),
 					StunAttr::Fingerprint,
@@ -369,7 +369,7 @@ impl<'i> TurnRes<'i> {
 			}
 			Self::BindChannelSuc { txid, key_data } => {
 				let attrs = [
-					StunAttr::Integrity(stun_zc::attr::Integrity::Set {
+					StunAttr::Integrity(stun::attr::Integrity::Set {
 						key_data: &key_data,
 					}),
 					StunAttr::Fingerprint,
