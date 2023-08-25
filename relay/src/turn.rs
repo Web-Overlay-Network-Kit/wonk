@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 
 use stun::{
 	attr::{AttrContext, Data, Error, StunAttr, StunAttrValue},
-	attrs::StunAttrs,
 	Stun, StunTyp,
 };
 
@@ -237,41 +236,38 @@ impl<'i> TurnRes<'i> {
 				return Some(len);
 			}
 			Self::Data { txid, xpeer, data } => {
-				let attrs = [
-					StunAttr::XPeer(xpeer),
-					StunAttr::Data(data),
-					StunAttr::Fingerprint,
-				];
 				Stun {
 					typ: StunTyp::Ind(0x007),
 					txid,
-					attrs: StunAttrs::List(&attrs),
+					attrs: vec![
+						StunAttr::XPeer(xpeer),
+						StunAttr::Data(data),
+						StunAttr::Fingerprint,
+					]
 				}
 				.encode(buff)
 			}
 			Self::BindingRes { txid, xmapped } => {
-				let attrs = [StunAttr::XMapped(xmapped), StunAttr::Fingerprint];
 				Stun {
 					typ: StunTyp::Res(0x001),
 					txid,
-					attrs: StunAttrs::List(&attrs),
+					attrs: vec![StunAttr::XMapped(xmapped), StunAttr::Fingerprint]
 				}
 				.encode(buff)
 			}
 			Self::AllocateUseAuth { txid, realm, nonce } => {
-				let attrs = [
-					StunAttr::Error(Error {
-						code: 401,
-						message: "",
-					}),
-					StunAttr::Realm(realm),
-					StunAttr::Nonce(nonce),
-					StunAttr::Fingerprint,
-				];
 				Stun {
 					typ: StunTyp::Err(0x003),
 					txid,
-					attrs: StunAttrs::List(&attrs),
+					attrs: vec![
+						StunAttr::Error(Error {
+							code: 401,
+							message: "",
+						}),
+						StunAttr::Realm(realm),
+						StunAttr::Nonce(nonce),
+						StunAttr::Fingerprint,
+					]
 				}
 				.encode(buff)
 			}
@@ -282,51 +278,48 @@ impl<'i> TurnRes<'i> {
 				xrelayed,
 				lifetime,
 			} => {
-				let attrs = [
-					StunAttr::XMapped(xmapped),
-					StunAttr::XRelayed(xrelayed),
-					StunAttr::Lifetime(lifetime),
-					StunAttr::Integrity(stun::attr::Integrity::Set {
-						key_data: &key_data,
-					}),
-					StunAttr::Fingerprint,
-				];
 				Stun {
 					typ: StunTyp::Res(0x003),
 					txid,
-					attrs: StunAttrs::List(&attrs),
+					attrs: vec![
+						StunAttr::XMapped(xmapped),
+						StunAttr::XRelayed(xrelayed),
+						StunAttr::Lifetime(lifetime),
+						StunAttr::Integrity(stun::attr::Integrity::Set {
+							key_data: &key_data,
+						}),
+						StunAttr::Fingerprint,
+					]
 				}
 				.encode(buff)
 			}
 			Self::AllocateMismatch { txid, key_data } => {
-				let attrs = [
-					StunAttr::Error(Error {
-						code: 437,
-						message: "",
-					}),
-					StunAttr::Integrity(stun::attr::Integrity::Set {
-						key_data: &key_data,
-					}),
-					StunAttr::Fingerprint,
-				];
 				Stun {
 					typ: StunTyp::Err(0x003),
 					txid,
-					attrs: StunAttrs::List(&attrs),
+					attrs: vec![
+						StunAttr::Error(Error {
+							code: 437,
+							message: "",
+						}),
+						StunAttr::Integrity(stun::attr::Integrity::Set {
+							key_data: &key_data,
+						}),
+						StunAttr::Fingerprint,
+					]
 				}
 				.encode(buff)
 			}
 			Self::PermissionSuc { txid, key_data } => {
-				let attrs = [
-					StunAttr::Integrity(stun::attr::Integrity::Set {
-						key_data: &key_data,
-					}),
-					StunAttr::Fingerprint,
-				];
 				Stun {
 					typ: StunTyp::Res(0x008),
 					txid,
-					attrs: StunAttrs::List(&attrs),
+					attrs: vec![
+						StunAttr::Integrity(stun::attr::Integrity::Set {
+							key_data: &key_data,
+						}),
+						StunAttr::Fingerprint,
+					]
 				}
 				.encode(buff)
 			}
@@ -335,17 +328,16 @@ impl<'i> TurnRes<'i> {
 				key_data,
 				lifetime,
 			} => {
-				let attrs = [
-					StunAttr::Lifetime(lifetime),
-					StunAttr::Integrity(stun::attr::Integrity::Set {
-						key_data: &key_data,
-					}),
-					StunAttr::Fingerprint,
-				];
 				Stun {
 					typ: StunTyp::Res(0x004),
 					txid,
-					attrs: StunAttrs::List(&attrs),
+					attrs: vec![
+						StunAttr::Lifetime(lifetime),
+						StunAttr::Integrity(stun::attr::Integrity::Set {
+							key_data: &key_data,
+						}),
+						StunAttr::Fingerprint,
+					]
 				}
 				.encode(buff)
 			}
@@ -353,31 +345,29 @@ impl<'i> TurnRes<'i> {
 				txid,
 				key_data
 			} => {
-				let attrs = [
-					StunAttr::Error(Error { code: 500, message: "Get kicked!" }),
-					StunAttr::Integrity(stun::attr::Integrity::Set {
-						key_data: &key_data,
-					}),
-					StunAttr::Fingerprint,
-				];
 				Stun {
 					typ: StunTyp::Err(0x004),
 					txid,
-					attrs: StunAttrs::List(&attrs),
+					attrs: vec![
+						StunAttr::Error(Error { code: 500, message: "Get kicked!" }),
+						StunAttr::Integrity(stun::attr::Integrity::Set {
+							key_data: &key_data,
+						}),
+						StunAttr::Fingerprint,
+					]
 				}
 				.encode(buff)
 			}
 			Self::BindChannelSuc { txid, key_data } => {
-				let attrs = [
-					StunAttr::Integrity(stun::attr::Integrity::Set {
-						key_data: &key_data,
-					}),
-					StunAttr::Fingerprint,
-				];
 				Stun {
 					typ: StunTyp::Res(0x009),
 					txid,
-					attrs: StunAttrs::List(&attrs),
+					attrs: vec![
+						StunAttr::Integrity(stun::attr::Integrity::Set {
+							key_data: &key_data,
+						}),
+						StunAttr::Fingerprint,
+					]
 				}
 				.encode(buff)
 			}

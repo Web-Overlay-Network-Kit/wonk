@@ -197,11 +197,10 @@ async fn main() -> Result<()> {
 						_ => {},
 					};
 					let txid = b"txidtxidtxid"; // TODO: Random?
-					let encoded = webrtc.encode();
 					if let Some(len) = (TurnRes::Data {
 						txid: txid.clone(),
 						xpeer: addr,
-						data: (&encoded).into()
+						data: webrtc.encode()
 					}
 					.encode(&mut send_buff)) {
 						sock.send_to(&send_buff[..len], paddr)?;

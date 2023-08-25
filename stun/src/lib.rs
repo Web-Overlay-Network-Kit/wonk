@@ -3,9 +3,10 @@ use bytes::Buf;
 
 pub mod attr;
 pub mod attrs;
+use attr::AttrContext;
 use attr::StunAttr;
 use attrs::flat::Flat;
-use attrs::{StunAttrs, StunAttrsIter};
+use attrs::StunAttrs;
 
 #[derive(Debug, Clone)]
 pub enum StunDecodeErr {
@@ -70,14 +71,21 @@ impl From<&StunTyp> for u16 {
 pub struct Stun<'i> {
 	pub typ: StunTyp,
 	pub txid: [u8; 12],
-	pub attrs: StunAttrs<'i>,
+	pub attrs: Vec<StunAttr<'i>>
 }
 impl<'i> Stun<'i> {
 	pub fn flat(&self) -> Flat<'i> {
 		Flat::from_iter(self)
 	}
+	pub fn length(&self) -> u16 {
+		let mut ret = 0;
+		for a in &self.attrs {
+			ret += a.len();
+		}
+		ret
+	}
 	pub fn len(&self) -> usize {
-		20 + self.attrs.length() as usize
+		20 + self.length() as usize
 	}
 	pub fn res(&self, attrs: &'i [StunAttr<'i>]) -> Self {
 		Self {
@@ -116,20 +124,19 @@ impl<'i> Stun<'i> {
 			return Err(StunDecodeErr::PacketTooSmall);
 		}
 
-		let attrs = StunAttrs::Parse {
+		let mut attrs = Vec::new();
+
+		for a in &(StunAttrs::Parse {
 			buff: &buff[20..][..length as usize],
 			header: (&buff[0..][..20]).try_into().unwrap(),
-		};
-		for res in &attrs {
-			if let Err(e) = res {
-				return Err(StunDecodeErr::AttrErr(e));
-			}
+		}) {
+			attrs.push(a.map_err(|e| StunDecodeErr::AttrErr(e))?);
 		}
 
 		Ok(Self { typ, txid, attrs })
 	}
 	pub fn encode(&self, buff: &mut [u8]) -> Option<usize> {
-		let length = self.attrs.length();
+		let length = self.length();
 		let len = 20 + length as usize;
 		if buff.len() < len {
 			return None;
@@ -140,7 +147,23 @@ impl<'i> Stun<'i> {
 		buff[8..][..12].copy_from_slice(&self.txid);
 		let (header, buff) = buff.split_at_mut(20);
 		let header = <&[u8; 20]>::try_from(&*header).unwrap();
-		self.attrs.encode(buff, header);
+
+		let mut length = 0;
+		let (mut attrs_prefix, mut to_write) = buff.split_at_mut(length);
+		for attr in &self.attrs {
+			let attr_len = attr.len();
+			let ctx = AttrContext {
+				header,
+				attrs_prefix,
+				attr_len,
+				zero_xor_bytes: false,
+			};
+			attr.encode(&mut to_write[..attr_len as usize], ctx);
+
+			length += attr.len() as usize;
+			(attrs_prefix, to_write) = buff.split_at_mut(length);
+		}
+
 		Some(len)
 	}
 }
@@ -152,19 +175,19 @@ impl<'i, 'a> IntoIterator for &'a Stun<'i> {
 		StunIter {
 			integrity: false,
 			fingerprint: false,
-			attrs: self.attrs.into_iter(),
+			attrs: self.attrs.iter(),
 		}
 	}
 }
 pub struct StunIter<'i, 'a> {
 	integrity: bool,
 	fingerprint: bool,
-	attrs: StunAttrsIter<'i, 'a>,
+	attrs: std::slice::Iter<'a, StunAttr<'i>>
 }
 impl<'i, 'a> Iterator for StunIter<'i, 'a> {
 	type Item = StunAttr<'i>;
 	fn next(&mut self) -> Option<Self::Item> {
-		let attr = self.attrs.next()?.unwrap();
+		let attr = self.attrs.next()?;
 		match attr {
 			_ if self.fingerprint => return None,
 			StunAttr::Fingerprint => self.fingerprint = true,
@@ -172,6 +195,6 @@ impl<'i, 'a> Iterator for StunIter<'i, 'a> {
 			StunAttr::Integrity(_) => self.integrity = true,
 			_ => {}
 		}
-		Some(attr)
+		Some(attr.clone())
 	}
 }
